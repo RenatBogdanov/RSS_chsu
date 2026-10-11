@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ПАЛИТРА ИЗ 5 ЦВЕТОВ ПОЛЬЗОВАТЕЛЯ -->
+    <!-- Палитра -->
     <color name="palette_primary">#486B85</color>       <!-- Steel Blue: кнопки, акценты, иконки -->
     <color name="palette_background">#CAD2CB</color>    <!-- Light Sage Grey: комфортный мягкий фон страниц -->
     <color name="palette_surface">#FFFFFF</color>       <!-- Белый: контрастный фон карточек и шторок -->

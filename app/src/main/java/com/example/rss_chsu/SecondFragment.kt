@@ -30,6 +30,11 @@ class SecondFragment : Fragment() {
             findNavController().navigateUp()
         }
 
+        // Переход на страницу заметок по нажатию на кнопку "Заметки"
+        binding.buttonNotes.setOnClickListener {
+            findNavController().navigate(R.id.action_SecondFragment_to_NotesFragment)
+        }
+
         // Открытие шторки "Настройки" по нажатию на ⚙
         binding.buttonSettings.setOnClickListener {
             val dialog = BottomSheetDialog(requireContext())

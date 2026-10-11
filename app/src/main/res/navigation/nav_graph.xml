@@ -24,5 +24,15 @@
         <action
             android:id="@+id/action_SecondFragment_to_FirstFragment"
             app:destination="@id/FirstFragment" />
+
+        <action
+            android:id="@+id/action_SecondFragment_to_NotesFragment"
+            app:destination="@id/NotesFragment" />
     </fragment>
+
+    <fragment
+        android:id="@+id/NotesFragment"
+        android:name="com.example.rss_chsu.NotesFragment"
+        android:label="Заметки"
+        tools:layout="@layout/fragment_notes" />
 </navigation>
