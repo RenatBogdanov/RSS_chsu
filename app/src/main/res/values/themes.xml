@@ -1,8 +1,17 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Base.Theme.RSS_chsu" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <!-- Привязка палитры пользователя -->
+        <item name="colorPrimary">@color/palette_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <item name="android:colorBackground">@color/palette_background</item>
+
+        <item name="colorSurface">@color/palette_surface</item>
+        <item name="colorOnSurface">@color/palette_text_main</item>
+        <item name="colorOnSurfaceVariant">@color/palette_text_sub</item>
+
+        <item name="colorOutline">@color/palette_text_sub</item>
     </style>
 
     <style name="Theme.RSS_chsu" parent="Base.Theme.RSS_chsu" />
