@@ -4,42 +4,23 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.widget.PopupMenu
+import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
-import com.example.rss_chsu.databinding.FragmentFeedBinding
+import com.example.rss_chsu.ui.screens.MainScreen
+import com.example.rss_chsu.ui.theme.RSS_chsuTheme
 
 class FirstFragment : Fragment() {
-
-    private var _binding: FragmentFeedBinding? = null
-    private val binding get() = _binding!!
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        _binding = FragmentFeedBinding.inflate(inflater, container, false)
-        return binding.root
-    }
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-
-        // Переход в "Дополнительное меню" по нажатию на кнопку "<"
-        binding.buttonNav.setOnClickListener {
-            findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+        return ComposeView(requireContext()).apply {
+            setContent {
+                RSS_chsuTheme {
+                    MainScreen()
+                }
+            }
         }
-
-        // Показ меню "Фильтрация" по нажатию на кнопку "⋮"
-        binding.buttonMenu.setOnClickListener { v ->
-            val popup = PopupMenu(requireContext(), v)
-            popup.menuInflater.inflate(R.menu.menu_main, popup.menu)
-            popup.show()
-        }
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
     }
 }

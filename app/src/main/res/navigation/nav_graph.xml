@@ -8,7 +8,7 @@
     <fragment
         android:id="@+id/FirstFragment"
         android:name="com.example.rss_chsu.FirstFragment"
-        android:label="@string/first_fragment_label"
+        android:label="Лента"
         tools:layout="@layout/fragment_feed">
 
         <action
@@ -18,7 +18,7 @@
     <fragment
         android:id="@+id/SecondFragment"
         android:name="com.example.rss_chsu.SecondFragment"
-        android:label="@string/second_fragment_label"
+        android:label="Меню"
         tools:layout="@layout/fragment_sources">
 
         <action
