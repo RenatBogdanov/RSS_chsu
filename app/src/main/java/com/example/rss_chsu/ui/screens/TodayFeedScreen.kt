@@ -26,14 +26,23 @@ import com.example.rss_chsu.ui.theme.*
 
 @Composable
 fun TodayFeedScreen(
+    articlesList: List<Article>, // Передаем живые данные
     onArticleClick: (Article) -> Unit,
+    onBookmarkClick: (Article) -> Unit, // Передаем событие клика по закладке
     onFilterClick: () -> Unit = {}
 ) {
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     val filterOptions = listOf("Для вас", "Все статьи", "Непрочитанные")
 
-    val articles = SampleData.articlesList.filter { !it.isFeatured }
-    val featured = SampleData.featuredArticle
+    // Логика фильтрации статей на основе вкладок
+    val filteredArticles = when (selectedFilterIndex) {
+        1 -> articlesList.filter { !it.isFeatured }
+        2 -> articlesList.filter { !it.isFeatured && !it.isRead }
+        else -> articlesList.filter { !it.isFeatured }
+    }
+
+    // Находим главную статью в живом списке
+    val featured = articlesList.find { it.isFeatured } ?: SampleData.featuredArticle
 
     Column(
         modifier = Modifier
@@ -72,7 +81,7 @@ fun TodayFeedScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Понедельник, 12 октября · 24 новых статьи",
+                        text = "Понедельник, 12 октября · ${filteredArticles.size} новых статей",
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
@@ -101,7 +110,8 @@ fun TodayFeedScreen(
             item {
                 FeaturedArticleCard(
                     article = featured,
-                    onClick = { onArticleClick(featured) }
+                    onClick = { onArticleClick(featured) },
+                    onBookmarkClick = { onBookmarkClick(featured) }
                 )
             }
 
@@ -129,7 +139,7 @@ fun TodayFeedScreen(
             }
 
             // Article List Items
-            items(articles) { article ->
+            items(filteredArticles) { article ->
                 FeedArticleRow(
                     article = article,
                     onClick = { onArticleClick(article) }
@@ -168,10 +178,9 @@ fun FilterChipPill(
 @Composable
 fun FeaturedArticleCard(
     article: Article,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onBookmarkClick: () -> Unit
 ) {
-    var isBookmarked by remember { mutableStateOf(article.isBookmarked) }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -179,7 +188,6 @@ fun FeaturedArticleCard(
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() }
     ) {
-        // Hero Image Representation
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -203,7 +211,6 @@ fun FeaturedArticleCard(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Category Tag + Bookmark Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -218,11 +225,11 @@ fun FeaturedArticleCard(
             )
 
             IconButton(
-                onClick = { isBookmarked = !isBookmarked },
+                onClick = onBookmarkClick, // Логика идет сразу в репозиторий
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(
-                    imageVector = if (isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
+                    imageVector = if (article.isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
                     contentDescription = "Сохранить",
                     tint = TextPrimary,
                     modifier = Modifier.size(18.dp)
@@ -232,7 +239,6 @@ fun FeaturedArticleCard(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Headline
         Text(
             text = article.title,
             fontSize = 22.sp,
@@ -244,7 +250,6 @@ fun FeaturedArticleCard(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Subtitle Snippet
         Text(
             text = article.subtitle,
             fontSize = 14.sp,
@@ -256,7 +261,6 @@ fun FeaturedArticleCard(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Time Info
         Text(
             text = "1 час назад · ${article.readTime}",
             fontSize = 12.sp,
@@ -285,7 +289,7 @@ fun FeedArticleRow(
                 text = "${article.sourceName} · ${article.category}",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextSecondary
+                color = if (article.isRead) TextSecondary.copy(alpha = 0.5f) else TextSecondary
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -293,23 +297,19 @@ fun FeedArticleRow(
             Text(
                 text = article.title,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                fontWeight = if (article.isRead) FontWeight.Normal else FontWeight.Bold, // Текст тускнеет, если прочитано
+                color = if (article.isRead) TextPrimary.copy(alpha = 0.6f) else TextPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 20.sp
             )
-
             Spacer(modifier = Modifier.height(6.dp))
-
             Text(
                 text = "${article.date} · ${article.readTime}",
                 fontSize = 12.sp,
                 color = TextSecondary
             )
         }
-
-        // Thumbnail placeholder
         Box(
             modifier = Modifier
                 .size(72.dp)

@@ -12,6 +12,11 @@ navigationFragmentKtx = "2.10.2"
 navigationUiKtx = "2.10.2"
 composeBom = "2025.02.00"
 activityCompose = "1.10.0"
+# Зависимости для сети и парсинга:
+ktor = "2.3.12"
+kotlinxSerialization = "1.6.3"
+# Добавили версию Room для локальной базы данных:
+room = "2.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,5 +36,21 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 
+# Библиотеки Ktor и сериализации:
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-client-serialization = { module = "io.ktor:ktor-client-serialization", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+kotlinx-serialization-json = { module = "io.github.pdvrieze.xmlutil:serialization", version.ref = "kotlinxSerialization" }
+
+# Добавили библиотеки Room:
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "1.9.24" }
+# Добавили современный плагин KSP, совместимый с Kotlin 2.1.0 для сборки Room
+google-ksp = { id = "com.google.devtools.ksp", version = "2.1.0-1.0.29" }

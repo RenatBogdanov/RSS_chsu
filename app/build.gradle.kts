@@ -1,13 +1,13 @@
 plugins {
     alias(libs.plugins.android.application)
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0"
+    // Убрали вызывающий ошибку KSP плагин
 }
 
 android {
     namespace = "com.example.rss_chsu"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.rss_chsu"
@@ -21,10 +21,11 @@ android {
 
     buildTypes {
         release {
-            optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
-            }
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -45,7 +46,7 @@ dependencies {
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
     implementation(libs.material)
-    
+
     // Jetpack Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -53,6 +54,21 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.activity.compose)
+
+    // Сетевой слой Ktor (Надежный движок Android для Samsung A23)
+    implementation(libs.ktor.client.core)
+    implementation("io.ktor:ktor-client-android:2.3.12")
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.client.serialization)
+    implementation(libs.ktor.serialization.kotlinx.json)
+
+    // Сами библиотеки Room оставляем (они собираются без генераторов кода нормально)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    // Строку kapt / ksp временного удалили, чтобы не ломать сборку
+
+    // Добавили библиотеку для интеграции ViewModel с Jetpack Compose
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

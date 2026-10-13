@@ -1,5 +1,8 @@
 package com.example.rss_chsu.ui.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class Article(
     val id: String,
     val title: String,
@@ -16,6 +19,7 @@ data class Article(
     val isFeatured: Boolean = false
 )
 
+@Serializable
 data class Source(
     val id: String,
     val name: String,
@@ -28,6 +32,7 @@ data class Source(
     val unreadCount: Int = 0
 )
 
+@Serializable
 data class Folder(
     val id: String,
     val name: String,
@@ -62,7 +67,7 @@ object SampleData {
     val recommendedFeatured = Article(
         id = "rec_1",
         title = "Как генеративный ИИ изменяет интерфейсы будущего",
-        subtitle = "Обзор ключевых дизайн-систем и подходов к разработке персональных ассистентов.",
+        subtitle = "Обзор ключевых дизайн-систем и подходов к разработке персональных ассистанов.",
         content = "Искусственный интеллект больше не просто инструмент — он становится новым медиумом интерфейсов...",
         sourceName = "Arzamas",
         category = "ДИЗАЙН И ТЕХНОЛОГИИ",
@@ -250,48 +255,11 @@ object SampleData {
         Source(
             id = "6",
             name = "ПостНаука",
-            domain = "postnauka.org",
-            description = "Учёные о мире, человеке и обществе\n8 статей в неделю",
+            domain = "postnauka.ru",
+            description = "Проект о современной науке и ученых",
             articlesPerWeek = "8 статей в неделю",
             logoText = "ПН",
             isSubscribed = false
-        ),
-        Source(
-            id = "7",
-            name = "Наука и жизнь",
-            domain = "nkj.ru",
-            description = "Журнал для любопытных с 1890 года\n15 статей в неделю",
-            articlesPerWeek = "15 статей в неделю",
-            logoText = "НЖ",
-            isSubscribed = false
         )
     )
-
-    fun generateMoreArticles(page: Int): List<Article> {
-        val titles = listOf(
-            "Как веб-технологии меняют подход к созданию локальных приложений",
-            "Загадки глубокого космоса: что нашли новые телескопы",
-            "Психология продуктивности: почему перерывы важнее рабочих часов",
-            "Устойчивая архитектура: зеленые здания и смарт-города будущего",
-            "Дизайн интерфейсов без экрана: эмбиентные сервисы и голосовые боты",
-            "Секреты эффективного отдыха в цифровую эпоху",
-            "История развития шрифтов и типографики от Гутенберга до переменных шрифтов",
-            "Как устроен рынок независимых RSS-ридеров в 2026 году"
-        )
-        val sources = listOf("Хабр", "N + 1", "vc.ru", "Т — Ж", "Лайфхакер", "ПостНаука", "Arzamas")
-        val categories = listOf("Технологии", "Наука", "Бизнес", "Дизайн", "Образ жизни", "Культура")
-
-        return List(6) { index ->
-            val globalIdx = page * 6 + index
-            Article(
-                id = "gen_$globalIdx",
-                title = titles[globalIdx % titles.size],
-                subtitle = "Подробный разбор главных трендов и практических рекомендаций экспертов.",
-                sourceName = sources[globalIdx % sources.size],
-                category = categories[globalIdx % categories.size],
-                date = "${(globalIdx % 5) + 1} дн. назад",
-                readTime = "${(globalIdx % 6) + 3} мин"
-            )
-        }
-    }
 }

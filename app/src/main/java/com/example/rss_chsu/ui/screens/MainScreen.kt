@@ -1,5 +1,6 @@
 package com.example.rss_chsu.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,6 +21,11 @@ fun MainScreen() {
         color = MaterialTheme.colorScheme.background
     ) {
         if (selectedArticle != null) {
+            // Перехватываем системную кнопку «Назад» на смартфоне
+            BackHandler {
+                selectedArticle = null // Закрываем статью и возвращаемся к текущей вкладке
+            }
+
             ArticleReaderScreen(
                 article = selectedArticle!!,
                 onBackClick = { selectedArticle = null }
@@ -39,9 +45,10 @@ fun MainScreen() {
                         .padding(paddingValues)
                 ) {
                     when (currentTab) {
-                        NavTab.TODAY -> TodayFeedScreen(
-                            onArticleClick = { selectedArticle = it },
-                            onFilterClick = { showSettingsSheet = true }
+                        // Сюда мы аккуратно прописали передачу статьи: selectedArticle = it
+                        NavTab.TODAY -> FeedScreen(
+                            onMenuClick = { showSettingsSheet = true },
+                            onNavClick = { article -> selectedArticle = article }
                         )
                         NavTab.SUBSCRIPTIONS -> SubscriptionsScreen(
                             onAddSourceClick = { currentTab = NavTab.SEARCH },
