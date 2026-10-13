@@ -1,27 +1,22 @@
 package com.example.rss_chsu
 
 import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import com.example.rss_chsu.databinding.ActivityMainBinding
+import com.example.rss_chsu.ui.screens.MainScreen
+import com.example.rss_chsu.ui.theme.RSS_chsuTheme
 
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
+class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        ViewCompat.setOnApplyWindowInsetsListener(binding.navHostFragmentContentMain) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
+        setContent {
+            RSS_chsuTheme {
+                MainScreen()
+            }
         }
     }
 }
