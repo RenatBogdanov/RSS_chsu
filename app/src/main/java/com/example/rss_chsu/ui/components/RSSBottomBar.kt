@@ -40,7 +40,7 @@ fun RSSBottomBar(
                     color = LightCardBorder,
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
-                    strokeWidth = 1.dp.toPx()
+                    strokeWidth = 1.5.dp.toPx()
                 )
             },
         color = MaterialTheme.colorScheme.background

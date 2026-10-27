@@ -19,11 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.components.RssIcons
+import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Folder
-import com.example.rss_chsu.ui.model.SampleData
+import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
 
@@ -32,7 +34,12 @@ fun SubscriptionsScreen(
     onAddSourceClick: () -> Unit,
     onMenuClick: () -> Unit = {}
 ) {
-    val folders = remember { mutableStateListOf(*SampleData.sampleFolders.toTypedArray()) }
+    val realFolders by RssRepository.folders.collectAsState()
+    val realSources by RssRepository.sources.collectAsState()
+    val realArticles by RssRepository.articles.collectAsState()
+
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var newFolderNameInput by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -43,7 +50,7 @@ fun SubscriptionsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // Header Title & Subtitle with Action Icon
+            // Header Title & Subtitle
             item {
                 Column(
                     modifier = Modifier
@@ -73,7 +80,7 @@ fun SubscriptionsScreen(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "12 источников · всё, что вам интересно",
+                        text = "Источников: ${realSources.size} · статей: ${realArticles.size}",
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
@@ -85,7 +92,7 @@ fun SubscriptionsScreen(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                         .clip(RoundedCornerShape(14.dp)),
                     color = LightSurfaceContainer
                 ) {
@@ -114,13 +121,12 @@ fun SubscriptionsScreen(
                             )
                         }
 
-                        // Count Badge
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = ChipUnselected
                         ) {
                             Text(
-                                text = "24",
+                                text = "${realArticles.size}",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary,
@@ -131,70 +137,94 @@ fun SubscriptionsScreen(
                 }
             }
 
-            // Section Title: Ваши папки | Изменить
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Ваши папки",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = "Изменить",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.clickable { }
+            if (realFolders.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Ваши папки",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                }
+
+                items(realFolders) { folder ->
+                    val sourcesInFolder = realSources.filter { it.folderName == folder.name }
+                    FolderItemRow(
+                        folder = folder,
+                        sourcesInFolder = sourcesInFolder,
+                        onToggleExpand = {
+                            RssRepository.toggleFolderExpanded(folder.id)
+                        }
                     )
                 }
-            }
 
-            // Folders
-            items(folders) { folder ->
-                val index = folders.indexOf(folder)
-                FolderItemRow(
-                    folder = folder,
-                    onToggleExpand = {
-                        folders[index] = folder.copy(isExpanded = !folder.isExpanded)
+                val unassignedSources = realSources.filter { it.folderName == null }
+                if (unassignedSources.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Без папки",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+                        )
                     }
-                )
-            }
+                    items(unassignedSources) { source ->
+                        SourceSubItemRow(source = source)
+                    }
+                }
+            } else if (realSources.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📁 У вас пока нет источников.\nПерейдите в Поиск, чтобы добавить первую RSS-ленту.",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+            } else {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Ваши источники",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                }
 
-            // New Folder Button
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = RssIcons.Folder,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Новая папка",
-                        fontSize = 15.sp,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
+                items(realSources) { source ->
+                    SourceSubItemRow(source = source)
                 }
             }
         }
 
-        // Floating Bottom Pill Button: "+ Добавить источник"
+        // Floating Bottom Pill Button: "+ Создать новую папку"
         Button(
-            onClick = onAddSourceClick,
+            onClick = { showCreateFolderDialog = true },
             shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
@@ -211,10 +241,52 @@ fun SubscriptionsScreen(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "Добавить источник",
+                text = "Создать новую папку",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
+            )
+        }
+
+        // Create Folder Dialog
+        if (showCreateFolderDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreateFolderDialog = false },
+                containerColor = LightSurface,
+                title = { Text("Создать новую папку", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+                text = {
+                    OutlinedTextField(
+                        value = newFolderNameInput,
+                        onValueChange = { newFolderNameInput = it },
+                        placeholder = { Text("Название папки", color = TextSecondary) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DarkPrimary,
+                            unfocusedBorderColor = LightCardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (newFolderNameInput.isNotBlank()) {
+                                RssRepository.createFolder(newFolderNameInput.trim())
+                                newFolderNameInput = ""
+                                showCreateFolderDialog = false
+                            }
+                        }
+                    ) {
+                        Text("Создать", fontWeight = FontWeight.Bold, color = DarkPrimary)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCreateFolderDialog = false }) {
+                        Text("Отмена", color = TextSecondary)
+                    }
+                }
             )
         }
     }
@@ -223,6 +295,7 @@ fun SubscriptionsScreen(
 @Composable
 fun FolderItemRow(
     folder: Folder,
+    sourcesInFolder: List<Source>,
     onToggleExpand: () -> Unit
 ) {
     Column(
@@ -232,7 +305,7 @@ fun FolderItemRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onToggleExpand() }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -255,7 +328,7 @@ fun FolderItemRow(
                         color = TextPrimary
                     )
                     Text(
-                        text = "${folder.sourceCount} источника",
+                        text = "${sourcesInFolder.size} источников",
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -266,15 +339,6 @@ fun FolderItemRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (folder.totalUnread > 0) {
-                    Text(
-                        text = "${folder.totalUnread}",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
                 Icon(
                     imageVector = if (folder.isExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
@@ -291,8 +355,17 @@ fun FolderItemRow(
                     .fillMaxWidth()
                     .padding(start = 48.dp, end = 16.dp)
             ) {
-                folder.sources.forEach { source ->
-                    SourceSubItemRow(source = source)
+                if (sourcesInFolder.isEmpty()) {
+                    Text(
+                        text = "В этой папке пока нет источников",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                } else {
+                    sourcesInFolder.forEach { source ->
+                        SourceSubItemRow(source = source, horizontalPadding = 0.dp)
+                    }
                 }
             }
         }
@@ -300,12 +373,15 @@ fun FolderItemRow(
 }
 
 @Composable
-fun SourceSubItemRow(source: Source) {
+fun SourceSubItemRow(
+    source: Source,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { }
-            .padding(vertical = 10.dp),
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -316,14 +392,14 @@ fun SourceSubItemRow(source: Source) {
             // Logo Badge
             Box(
                 modifier = Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(ChipUnselected),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = source.logoText,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
@@ -332,8 +408,8 @@ fun SourceSubItemRow(source: Source) {
             Column {
                 Text(
                     text = source.name,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Text(
@@ -345,11 +421,18 @@ fun SourceSubItemRow(source: Source) {
         }
 
         if (source.unreadCount > 0) {
-            Text(
-                text = "${source.unreadCount}",
-                fontSize = 12.sp,
-                color = TextSecondary
-            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = ChipUnselected
+            ) {
+                Text(
+                    text = "${source.unreadCount}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
         }
     }
 }

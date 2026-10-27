@@ -1,8 +1,6 @@
 package com.example.rss_chsu.ui.model
 
-import android.util.Xml
-import org.xmlpull.v1.XmlPullParser
-import java.io.StringReader
+import android.text.Html
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -25,146 +23,120 @@ object RssParser {
         "September" to "сентября", "October" to "октября", "November" to "ноября", "December" to "декабря"
     )
 
+    private fun cleanHtmlEntities(input: String): String {
+        if (input.isEmpty()) return ""
+        return try {
+            Html.fromHtml(input, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+        } catch (_: Exception) {
+            input.replace("&laquo;", "«")
+                .replace("&raquo;", "»")
+                .replace("&quot;", "\"")
+                .replace("&nbsp;", " ")
+                .replace("&mdash;", "—")
+                .replace("&ndash;", "–")
+                .replace("&hellip;", "…")
+                .replace("&amp;", "&")
+                .trim()
+        }
+    }
+
     fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed"): Pair<Source, List<Article>> {
         val articles = mutableListOf<Article>()
-        var feedTitle = sourceNameDefault
-        var feedDescription = ""
 
-        try {
-            val parser = Xml.newPullParser()
-            parser.setInput(StringReader(xmlContent))
+        // 1. Extract feed title
+        val titleMatch = Regex("""<(?:channel|feed)[^>]*>[\s\S]*?<title[^>]*>([\s\S]*?)</title>""", RegexOption.IGNORE_CASE).find(xmlContent)
+        val rawFeedTitle = titleMatch?.groupValues?.get(1)
+            ?.replace("<![CDATA[", "")?.replace("]]>", "")
+            ?.replace(Regex("<.*?>"), "")?.trim() ?: sourceNameDefault
+        val feedTitle = cleanHtmlEntities(rawFeedTitle)
 
-            var eventType = parser.eventType
-            var currentTitle: String? = null
-            var currentLink: String? = null
-            var currentDescription: String? = null
-            var currentContent: String? = null
-            var currentPubDate: String? = null
-            var currentAuthor: String? = null
-            var currentImageUrl: String? = null
-            var inItem = false
-            var activeTag = ""
+        // 2. Extract feed description
+        val descMatch = Regex("""<(?:channel|feed)[^>]*>[\s\S]*?<(?:description|subtitle)[^>]*>([\s\S]*?)</(?:description|subtitle)>""", RegexOption.IGNORE_CASE).find(xmlContent)
+        val feedDescription = cleanHtmlEntities(descMatch?.groupValues?.get(1)?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim() ?: "")
 
-            val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        // 3. Extract items / entries
+        val itemRegex = Regex("""<(?:item|entry)[\s\S]*?>([\s\S]*?)</(?:item|entry)>""", RegexOption.IGNORE_CASE)
+        val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val enclosureRegex = Regex("""<enclosure[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val mediaRegex = Regex("""<media:(?:content|thumbnail)[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                val rawName = parser.name ?: ""
-                val name = rawName.substringAfter(":").lowercase()
+        val matches = itemRegex.findAll(xmlContent)
+        for (match in matches) {
+            val block = match.groupValues[1]
 
-                when (eventType) {
-                    XmlPullParser.START_TAG -> {
-                        activeTag = name
-                        if (name == "item" || name == "entry") {
-                            inItem = true
-                            currentTitle = null
-                            currentLink = null
-                            currentDescription = null
-                            currentContent = null
-                            currentPubDate = null
-                            currentAuthor = null
-                            currentImageUrl = null
-                        }
-                        if (name == "enclosure" || name == "content" || name == "thumbnail" || name == "image") {
-                            val url = parser.getAttributeValue(null, "url")
-                            if (!url.isNullOrEmpty() && currentImageUrl == null) {
-                                currentImageUrl = url
-                            }
-                        }
-                    }
-                    XmlPullParser.TEXT, XmlPullParser.CDSECT -> {
-                        val text = parser.text ?: ""
-                        if (text.isNotEmpty()) {
-                            if (inItem) {
-                                when (activeTag) {
-                                    "title" -> currentTitle = (currentTitle ?: "") + text
-                                    "link" -> if (currentLink.isNullOrEmpty()) currentLink = text
-                                    "description", "summary" -> currentDescription = (currentDescription ?: "") + text
-                                    "encoded", "content" -> currentContent = (currentContent ?: "") + text
-                                    "pubdate", "updated", "date" -> currentPubDate = (currentPubDate ?: "") + text
-                                    "creator", "author" -> currentAuthor = (currentAuthor ?: "") + text
-                                }
-                            } else {
-                                when (activeTag) {
-                                    "title" -> if (feedTitle == sourceNameDefault) feedTitle = text
-                                    "description", "subtitle" -> if (feedDescription.isEmpty()) feedDescription = text
-                                }
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> {
-                        if (name == "item" || name == "entry") {
-                            inItem = false
-                            val titleToUse = currentTitle?.trim() ?: ""
-                            if (titleToUse.isNotEmpty()) {
-                                val rawContent = currentContent?.trim() ?: ""
-                                val rawDesc = currentDescription?.trim() ?: ""
-                                val bestHtml = if (rawContent.length > rawDesc.length) rawContent else rawDesc
+            val itemTitle = Regex("""<title[^>]*>([\s\S]*?)</title>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
 
-                                if (currentImageUrl == null) {
-                                    val match = imgRegex.find(bestHtml)
-                                    if (match != null) {
-                                        currentImageUrl = match.groupValues[1]
-                                    }
-                                }
+            val itemLink = Regex("""<link[^>]*>([\s\S]*?)</link>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
+                ?: Regex("""<link[^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)?.trim()
 
-                                val cleanContent = bestHtml
-                                    .replace(Regex("(?i)<br\\s*/?>"), "\n")
-                                    .replace(Regex("(?i)</p>"), "\n\n")
-                                    .replace(Regex("<.*?>"), "")
-                                    .replace("&nbsp;", " ")
-                                    .replace("&mdash;", "—")
-                                    .replace("&ndash;", "–")
-                                    .replace("&quot;", "\"")
-                                    .replace("&amp;", "&")
-                                    .trim()
+            val itemDesc = Regex("""<description[^>]*>([\s\S]*?)</description>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
 
-                                val cleanSubtitle = rawDesc
-                                    .replace(Regex("<.*?>"), "")
-                                    .replace("&nbsp;", " ")
-                                    .trim()
+            val itemEncoded = Regex("""<content:encoded[^>]*>([\s\S]*?)</content:encoded>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
+                ?: Regex("""<content[^>]*>([\s\S]*?)</content>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                    ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
 
-                                val wordCount = cleanContent.split("\\s+".toRegex()).size
-                                val readMins = (wordCount / 160).coerceAtLeast(1)
+            val bestHtml = if ((itemEncoded?.length ?: 0) > (itemDesc?.length ?: 0)) itemEncoded!! else (itemDesc ?: itemTitle ?: "")
 
-                                val relativeTime = parseRssDateToRelative(currentPubDate)
-                                val russianDate = parseRssDateToRussian(currentPubDate)
+            val itemPubDate = Regex("""<(?:pubDate|updated|dc:date)[^>]*>(.*?)</(?:pubDate|updated|dc:date)>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)?.trim()
+            val itemAuthor = Regex("""<(?:dc:creator|author)[^>]*>([\s\S]*?)</(?:dc:creator|author)>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
+                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim()
 
-                                val article = Article(
-                                    id = currentLink?.trim() ?: (System.currentTimeMillis().toString() + "_" + articles.size),
-                                    title = titleToUse,
-                                    subtitle = if (cleanSubtitle.isNotEmpty()) cleanSubtitle.take(150) else cleanContent.take(150),
-                                    content = if (cleanContent.isNotEmpty()) cleanContent else titleToUse,
-                                    sourceName = feedTitle,
-                                    category = "Лента",
-                                    author = currentAuthor?.trim() ?: "",
-                                    date = relativeTime,
-                                    pubDateFormatted = russianDate,
-                                    readTime = "$readMins мин чтения",
-                                    imageUrl = currentImageUrl ?: "",
-                                    isFeatured = articles.isEmpty(),
-                                    isBookmarked = false,
-                                    isRead = false
-                                )
-                                articles.add(article)
-                            }
-                        }
-                        activeTag = ""
-                    }
-                }
-                eventType = parser.next()
+            val imgUrl = enclosureRegex.find(block)?.groupValues?.get(1)
+                ?: mediaRegex.find(block)?.groupValues?.get(1)
+                ?: imgRegex.find(bestHtml)?.groupValues?.get(1)
+                ?: imgRegex.find(itemDesc ?: "")?.groupValues?.get(1)
+
+            if (!itemTitle.isNullOrEmpty()) {
+                val cleanTitle = cleanHtmlEntities(itemTitle.replace(Regex("<.*?>"), ""))
+                
+                val cleanContent = cleanHtmlEntities(
+                    bestHtml
+                        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                        .replace(Regex("(?i)</p>"), "\n\n")
+                        .replace(Regex("<.*?>"), "")
+                )
+
+                val cleanSubtitle = cleanHtmlEntities(
+                    (itemDesc ?: "").replace(Regex("<.*?>"), "")
+                )
+
+                val wordCount = cleanContent.split("\\s+".toRegex()).size
+                val readMins = (wordCount / 160).coerceAtLeast(1)
+                val relativeTime = parseRssDateToRelative(itemPubDate)
+                val russianDate = parseRssDateToRussian(itemPubDate)
+
+                val article = Article(
+                    id = itemLink ?: (System.currentTimeMillis().toString() + "_" + articles.size),
+                    title = cleanTitle,
+                    subtitle = if (cleanSubtitle.isNotEmpty()) cleanSubtitle.take(150) else cleanContent.take(150),
+                    content = if (cleanContent.isNotEmpty()) cleanContent else cleanTitle,
+                    sourceName = feedTitle,
+                    category = "Лента",
+                    author = cleanHtmlEntities(itemAuthor ?: ""),
+                    date = relativeTime,
+                    pubDateFormatted = russianDate,
+                    readTime = "$readMins мин чтения",
+                    imageUrl = imgUrl ?: "",
+                    isFeatured = articles.isEmpty(),
+                    isBookmarked = false,
+                    isRead = false
+                )
+                articles.add(article)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         if (articles.isEmpty() && xmlContent.isNotEmpty()) {
             articles.add(
                 Article(
                     id = "fallback_${System.currentTimeMillis()}",
-                    title = "Лента: $sourceNameDefault",
+                    title = "Лента: $feedTitle",
                     subtitle = "Материалы получены из RSS потока.",
                     content = xmlContent.take(1000),
-                    sourceName = sourceNameDefault,
+                    sourceName = feedTitle,
                     category = "RSS",
                     date = "только что",
                     pubDateFormatted = "Сегодня",

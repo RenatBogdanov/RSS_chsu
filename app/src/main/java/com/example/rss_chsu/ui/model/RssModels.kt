@@ -12,6 +12,7 @@ data class Article(
     val category: String,
     val author: String = "",
     val date: String,
+    val pubDateFormatted: String = "",
     val readTime: String,
     val imageUrl: String = "",
     val isBookmarked: Boolean = false,

@@ -1,5 +1,7 @@
 package com.example.rss_chsu.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,11 +23,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.theme.*
@@ -37,6 +42,15 @@ fun ArticleReaderScreen(
 ) {
     var isSaved by remember { mutableStateOf(article.isBookmarked) }
     var isRead by remember { mutableStateOf(article.isRead) }
+
+    val context = LocalContext.current
+    val browserIntent = remember(article.id) {
+        try {
+            if (article.id.startsWith("http")) Intent(Intent.ACTION_VIEW, Uri.parse(article.id)) else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -139,8 +153,10 @@ fun ArticleReaderScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Article Subtitle / Snippet
-                if (article.subtitle.isNotEmpty()) {
+                // Article Subtitle / Snippet (Avoid duplication if content starts with subtitle)
+                val cleanSub = article.subtitle.trim()
+                val cleanCont = article.content.trim()
+                if (cleanSub.isNotEmpty() && cleanSub != cleanCont && !cleanCont.startsWith(cleanSub.take(30))) {
                     Text(
                         text = article.subtitle,
                         fontSize = 16.sp,
@@ -168,7 +184,7 @@ fun ArticleReaderScreen(
                             color = TextPrimary
                         )
                         Text(
-                            text = "${article.date} · ${article.readTime}",
+                            text = if (article.pubDateFormatted.isNotEmpty()) article.pubDateFormatted else article.date,
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -178,62 +194,28 @@ fun ArticleReaderScreen(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Hero Image Box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF8F9E8B)),
-                    contentAlignment = Alignment.Center
-                ) {
+                if (article.imageUrl.isNotEmpty()) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF6E816A).copy(alpha = 0.85f))
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(ChipUnselected),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "🌿",
-                            fontSize = 54.sp,
-                            modifier = Modifier.align(Alignment.Center)
+                        AsyncImage(
+                            model = article.imageUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
+                // Article Body Content (Real Content)
                 Text(
-                    text = "Пешеходная улица в Копенгагене · Фото: редакция",
-                    fontSize = 11.sp,
-                    fontStyle = FontStyle.Italic,
-                    color = TextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Article Body Content
-                Text(
-                    text = "Утром город звучит иначе, если в нём есть место для прогулки. Вместо шума машин — разговоры у кофейни, шелест листьев и звон велосипедов.",
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Serif,
-                    color = TextPrimary,
-                    lineHeight = 26.sp
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "Улица как место встречи",
-                    fontSize = 20.sp,
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    lineHeight = 26.sp
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "В Копенгагене удобство пешехода давно стало точкой отсчёта. Деревья дают тень, скамейки приглашают сделать паузу, а первые этажи домов возвращают улице жизнь.",
+                    text = if (article.content.isNotEmpty()) article.content else article.title,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Serif,
                     color = TextPrimary,
@@ -245,7 +227,16 @@ fun ArticleReaderScreen(
                 // Read Full Article Link
                 Row(
                     modifier = Modifier
-                        .clickable { }
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            if (browserIntent != null) {
+                                try {
+                                    context.startActivity(browserIntent)
+                                } catch (_: Exception) {
+                                    // ignore
+                                }
+                            }
+                        }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)

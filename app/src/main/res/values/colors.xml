@@ -8,6 +8,9 @@
     <color name="palette_text_sub">#1C252B</color>      <!-- Dark Slate: второстепенный текст, рамки -->
     <color name="palette_accent_sub">#93B4BC</color>    <!-- Soft Sage Blue: дополнительные акценты -->
 
+    <!-- Splash Screen Color -->
+    <color name="splash_bg">#FFFFFF</color>
+
     <!-- Служебные цвета -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
