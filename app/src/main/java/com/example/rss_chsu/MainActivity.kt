@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import com.example.rss_chsu.ui.model.KtorClient
+import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.screens.MainScreen
 import com.example.rss_chsu.ui.theme.RSS_chsuTheme
 import io.ktor.client.request.*
@@ -18,6 +19,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Открываем локальную БД (Room) и подписываемся на неё. Должно быть до setContent
+        RssRepository.init(applicationContext)
 
         // Асинхронно проверяем работу Ktor-клиента в фоновом потоке,
         // пока на экране Samsung загружается интерфейс приложения

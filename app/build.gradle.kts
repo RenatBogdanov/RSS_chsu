@@ -1,8 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
-    id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0"
-    // Убрали вызывающий ошибку KSP плагин
+    // Версии Kotlin-плагинов совпадают с Kotlin, встроенным в AGP 9 (2.2.10)
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10"
+    alias(libs.plugins.google.ksp)
 }
 
 android {
@@ -62,10 +63,10 @@ dependencies {
     implementation(libs.ktor.client.serialization)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    // Сами библиотеки Room оставляем (они собираются без генераторов кода нормально)
+    // Room: локальная база данных (генерация кода через KSP)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
-    // Строку kapt / ksp временного удалили, чтобы не ломать сборку
+    ksp(libs.room.compiler)
 
     // Добавили библиотеку для интеграции ViewModel с Jetpack Compose
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")

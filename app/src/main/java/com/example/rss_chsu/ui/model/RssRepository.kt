@@ -1,15 +1,43 @@
 package com.example.rss_chsu.ui.model
 
+import android.content.Context
+import com.example.rss_chsu.data.local.AppDatabase
+import com.example.rss_chsu.data.local.ArticleDao
+import com.example.rss_chsu.data.local.toArticle
+import com.example.rss_chsu.data.local.toEntity
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.nio.charset.Charset
 
+/** Лимиты кэша. Закладки в лимиты не входят и никогда не удаляются автоматически. */
+data class CachePolicy(
+    val maxArticles: Int = 500,
+    val maxAgeDays: Int = 30
+) {
+    val maxAgeMillis: Long get() = maxAgeDays * 24L * 60 * 60 * 1000
+}
+
 object RssRepository {
 
+    var cachePolicy = CachePolicy()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var dao: ArticleDao
+    private var initialized = false
+
+    // Публичный тип сохранён, экраны и FeedViewModel менять не нужно.
+    // Источник данных теперь БД: любое изменение таблицы автоматически приходит сюда.
     private val _articles = MutableStateFlow<List<Article>>(emptyList())
     val articles: StateFlow<List<Article>> = _articles.asStateFlow()
 
@@ -19,8 +47,49 @@ object RssRepository {
     private val _folders = MutableStateFlow<List<Folder>>(emptyList())
     val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
 
+    /** Вызвать один раз при старте приложения (MainActivity.onCreate или Application.onCreate). */
+    @Synchronized
+    fun init(context: Context) {
+        if (initialized) return
+        dao = AppDatabase.get(context).articleDao()
+        initialized = true
+
+        scope.launch { enforceCacheLimit() }
+
+        scope.launch {
+            dao.observeAll()
+                .map { list ->
+                    // «Главной» считаем самую свежую статью
+                    list.mapIndexed { index, entity -> entity.toArticle().copy(isFeatured = index == 0) }
+                }
+                .flowOn(Dispatchers.Default)
+                .collect { _articles.value = it }
+        }
+    }
+
     fun syncWithBackend() {
         // Поддерживаем совместимость с FeedViewModel
+    }
+
+    private suspend fun saveArticles(list: List<Article>) {
+        val now = System.currentTimeMillis()
+        val minPublished = now - cachePolicy.maxAgeMillis
+
+        val entities = withContext(Dispatchers.Default) {
+            list
+                // не кладём в кэш то, что тут же будет удалено по возрасту
+                .filter { it.publishedAt == 0L || it.publishedAt >= minPublished }
+                .map { it.toEntity(fetchedAt = now) }
+        }
+        dao.insertIgnore(entities)
+        enforceCacheLimit()
+    }
+
+    /** Удаляет устаревшие и лишние статьи (кроме закладок). */
+    suspend fun enforceCacheLimit() {
+        val policy = cachePolicy
+        dao.deleteOlderThan(System.currentTimeMillis() - policy.maxAgeMillis)
+        dao.deleteOverLimit(policy.maxArticles)
     }
 
     fun createFolder(name: String) {
@@ -92,12 +161,8 @@ object RssRepository {
 
             val sourceWithFolder = source.copy(folderName = targetFolder)
 
-            val currentArticles = _articles.value.toMutableList()
-            val updatedNewArticles = newArticles.mapIndexed { idx, art ->
-                if (idx == 0 && currentArticles.isEmpty()) art.copy(isFeatured = true) else art
-            }
-            currentArticles.addAll(0, updatedNewArticles)
-            _articles.value = currentArticles
+            // Было: правка списка в памяти. Стало: запись в БД, UI обновится через Flow.
+            saveArticles(newArticles)
 
             val currentSources = _sources.value.toMutableList()
             val existingIndex = currentSources.indexOfFirst { it.name == sourceWithFolder.name || it.domain == sourceWithFolder.domain }
@@ -132,24 +197,14 @@ object RssRepository {
     }
 
     fun toggleBookmark(articleId: String) {
-        val updatedList = _articles.value.map { article ->
-            if (article.id == articleId) {
-                article.copy(isBookmarked = !article.isBookmarked)
-            } else {
-                article
-            }
-        }
-        _articles.value = updatedList
+        scope.launch { dao.toggleBookmark(articleId) }
     }
 
     fun markAsRead(articleId: String) {
-        val updatedList = _articles.value.map { article ->
-            if (article.id == articleId) {
-                article.copy(isRead = true)
-            } else {
-                article
-            }
-        }
-        _articles.value = updatedList
+        scope.launch { dao.markAsRead(articleId) }
+    }
+
+    fun toggleRead(articleId: String) {
+        scope.launch { dao.toggleRead(articleId) }
     }
 }

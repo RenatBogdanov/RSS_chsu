@@ -92,7 +92,7 @@ object RssParser {
 
             if (!itemTitle.isNullOrEmpty()) {
                 val cleanTitle = cleanHtmlEntities(itemTitle.replace(Regex("<.*?>"), ""))
-                
+
                 val cleanContent = cleanHtmlEntities(
                     bestHtml
                         .replace(Regex("(?i)<br\\s*/?>"), "\n")
@@ -119,6 +119,7 @@ object RssParser {
                     author = cleanHtmlEntities(itemAuthor ?: ""),
                     date = relativeTime,
                     pubDateFormatted = russianDate,
+                    publishedAt = parseDateToMillis(itemPubDate),
                     readTime = "$readMins мин чтения",
                     imageUrl = imgUrl ?: "",
                     isFeatured = articles.isEmpty(),
@@ -160,8 +161,8 @@ object RssParser {
         return Pair(source, articles)
     }
 
-    private fun parseRssDateToRelative(dateStr: String?): String {
-        if (dateStr.isNullOrEmpty()) return "недавно"
+    fun parseDateToMillis(dateStr: String?): Long {
+        if (dateStr.isNullOrEmpty()) return 0L
 
         val formats = listOf(
             SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
@@ -171,21 +172,18 @@ object RssParser {
             SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
         )
 
-        var millis = 0L
         for (format in formats) {
             try {
                 format.timeZone = TimeZone.getTimeZone("UTC")
                 val date = format.parse(dateStr.trim())
-                if (date != null) {
-                    millis = date.time
-                    break
-                }
+                if (date != null) return date.time
             } catch (_: Exception) {}
         }
+        return 0L
+    }
 
-        if (millis == 0L) {
-            return dateStr.take(16)
-        }
+    fun relativeFromMillis(millis: Long): String {
+        if (millis == 0L) return "недавно"
 
         val diffMillis = System.currentTimeMillis() - millis
         val minutes = diffMillis / (1000 * 60)
@@ -202,6 +200,12 @@ object RssParser {
             months < 12 -> "${months}мес"
             else -> "${years}г"
         }
+    }
+
+    private fun parseRssDateToRelative(dateStr: String?): String {
+        if (dateStr.isNullOrEmpty()) return "недавно"
+        val millis = parseDateToMillis(dateStr)
+        return if (millis == 0L) dateStr.take(16) else relativeFromMillis(millis)
     }
 
     private fun parseRssDateToRussian(dateStr: String?): String {

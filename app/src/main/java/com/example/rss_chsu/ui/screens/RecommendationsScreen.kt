@@ -25,7 +25,7 @@ fun RecommendationsScreen(
     onFilterClick: () -> Unit = {},
     feedViewModel: FeedViewModel = viewModel()
 ) {
-    val articlesList by feedViewModel.articles.collectAsState()
+    val articlesList by feedViewModel.personalizedArticles.collectAsState()
 
     Column(
         modifier = Modifier
@@ -90,7 +90,7 @@ fun RecommendationsScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Подборка интересных статей из ваших подписок",
+                            text = "Подборка по вашим закладкам и прочитанному",
                             fontSize = 13.sp,
                             color = TextSecondary
                         )

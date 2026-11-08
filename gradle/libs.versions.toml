@@ -15,8 +15,10 @@ activityCompose = "1.10.0"
 # Зависимости для сети и парсинга:
 ktor = "2.3.12"
 kotlinxSerialization = "1.6.3"
-# Добавили версию Room для локальной базы данных:
-room = "2.6.1"
+# Room (локальная база данных):
+room = "2.8.4"
+# KSP: версия должна соответствовать Kotlin, встроенному в AGP 9 (2.2.10)
+ksp = "2.2.10-2.0.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,7 +46,7 @@ ktor-client-serialization = { module = "io.ktor:ktor-client-serialization", vers
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 kotlinx-serialization-json = { module = "io.github.pdvrieze.xmlutil:serialization", version.ref = "kotlinxSerialization" }
 
-# Добавили библиотеки Room:
+# Room:
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
@@ -52,5 +54,4 @@ room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version = "1.9.24" }
-# Добавили современный плагин KSP, совместимый с Kotlin 2.1.0 для сборки Room
-google-ksp = { id = "com.google.devtools.ksp", version = "2.1.0-1.0.29" }
+google-ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

@@ -17,7 +17,9 @@ data class Article(
     val imageUrl: String = "",
     val isBookmarked: Boolean = false,
     val isRead: Boolean = false,
-    val isFeatured: Boolean = false
+    val isFeatured: Boolean = false,
+    val publishedAt: Long = 0L,                 // время публикации, мс
+    val keywords: List<String> = emptyList()    // ключевые слова для рекомендаций
 )
 
 @Serializable

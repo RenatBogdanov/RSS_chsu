@@ -38,10 +38,13 @@ import com.example.rss_chsu.ui.theme.*
 @Composable
 fun ArticleReaderScreen(
     article: Article,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onBookmarkClick: () -> Unit = {},
+    onReadToggle: () -> Unit = {}
 ) {
-    var isSaved by remember { mutableStateOf(article.isBookmarked) }
-    var isRead by remember { mutableStateOf(article.isRead) }
+    // Состояние берётся из актуальной статьи (БД), а не хранится локально
+    val isSaved = article.isBookmarked
+    val isRead = article.isRead
 
     val context = LocalContext.current
     val browserIntent = remember(article.id) {
@@ -283,7 +286,7 @@ fun ArticleReaderScreen(
                     // Bookmark / Save action
                     Row(
                         modifier = Modifier
-                            .clickable { isSaved = !isSaved }
+                            .clickable { onBookmarkClick() }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -314,7 +317,7 @@ fun ArticleReaderScreen(
 
                     // Mark as read (Checkmark)
                     IconButton(
-                        onClick = { isRead = !isRead },
+                        onClick = onReadToggle,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
