@@ -23,7 +23,7 @@ enum class NavTab(val title: String, val icon: ImageVector) {
     SUBSCRIPTIONS("Подписки", RssIcons.Subscriptions),
     RECOMMENDATIONS("Рекомендации", RssIcons.Recommendations),
     SEARCH("Поиск", Icons.Default.Search),
-    SAVED("Сохранённое", RssIcons.Bookmark)
+    SAVED("Закладки", RssIcons.Bookmark)
 }
 
 @Composable

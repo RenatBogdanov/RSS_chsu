@@ -31,26 +31,7 @@ fun SavedArticlesScreen(
     val savedArticles = allArticles.filter { it.isBookmarked }
     val listState = rememberLazyListState()
 
-    var displayLimit by remember(savedArticles.size) {
-        mutableIntStateOf(25)
-    }
-
-    val visibleArticles = remember(savedArticles, displayLimit) {
-        savedArticles.take(displayLimit)
-    }
-
-    LaunchedEffect(listState, savedArticles.size) {
-        snapshotFlow {
-            val layoutInfo = listState.layoutInfo
-            val totalItemsNumber = layoutInfo.totalItemsCount
-            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
-            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
-        }.collect { isNearEnd ->
-            if (isNearEnd && displayLimit < savedArticles.size) {
-                displayLimit = (displayLimit + 25).coerceAtMost(savedArticles.size)
-            }
-        }
-    }
+    // Compose LazyColumn автоматически отрисовывает элементы только когда они появляются на экране
 
     Column(
         modifier = Modifier
@@ -109,7 +90,7 @@ fun SavedArticlesScreen(
                             .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
                     ) {
                         Text(
-                            text = "Сохранённое",
+                            text = "Закладки",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -123,37 +104,26 @@ fun SavedArticlesScreen(
                     }
                 }
 
-                items(visibleArticles, key = { it.id }) { article ->
+                items(savedArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
                 }
 
-                if (displayLimit < savedArticles.size) {
-                    item(key = "loading_more_indicator") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = DarkPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = "Загрузка остальных статей...",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
+                item(key = "end_of_list_indicator") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Конец списка.",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

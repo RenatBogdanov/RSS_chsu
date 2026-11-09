@@ -25,6 +25,7 @@ import com.example.rss_chsu.ui.model.RssRepository
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun SearchSourcesScreen() {
@@ -34,14 +35,35 @@ fun SearchSourcesScreen() {
 
     val realFolders by RssRepository.folders.collectAsState()
     val realSources by RssRepository.sources.collectAsState()
+    
+    val coroutineScope = rememberCoroutineScope()
 
     val folderNames = remember(realFolders) {
         listOf("Все") + realFolders.map { it.name }
     }
 
-    val filteredSources = remember(searchQuery, selectedTagIndex, realSources, folderNames) {
+    // Объединяем подписки пользователя и каталог популярных источников
+    val allSearchableSources = remember(realSources) {
+        val subscribedUrls = realSources.map { it.domain }.toSet()
+        val catalog = com.example.rss_chsu.ui.model.PopularSources.topFeeds.map { source ->
+            if (subscribedUrls.contains(source.domain)) {
+                // Если мы уже подписаны, берём данные из реальных подписок (с именем папки и т.д.)
+                realSources.first { it.domain == source.domain }
+            } else {
+                source
+            }
+        }
+        
+        // Добавляем те источники пользователя, которых изначально не было в каталоге
+        val catalogUrls = catalog.map { it.domain }.toSet()
+        val customUserSources = realSources.filter { !catalogUrls.contains(it.domain) }
+        
+        customUserSources + catalog
+    }
+
+    val filteredSources = remember(searchQuery, selectedTagIndex, allSearchableSources, folderNames) {
         val selectedFolderName = if (selectedTagIndex in folderNames.indices) folderNames[selectedTagIndex] else "Все"
-        realSources.filter { source ->
+        allSearchableSources.filter { source ->
             val matchesSearch = searchQuery.isBlank() ||
                 source.name.contains(searchQuery, ignoreCase = true) ||
                 source.domain.contains(searchQuery, ignoreCase = true) ||
@@ -49,7 +71,7 @@ fun SearchSourcesScreen() {
 
             val matchesFolder = selectedFolderName == "Все" ||
                 source.folderName == selectedFolderName ||
-                source.description.contains(selectedFolderName, ignoreCase = true)
+                (source.folderName == null && selectedFolderName == "Все")
 
             matchesSearch && matchesFolder
         }
@@ -175,7 +197,7 @@ fun SearchSourcesScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Подключенные источники",
+                        text = if (searchQuery.isEmpty()) "Популярные источники" else "Результаты поиска",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -197,7 +219,7 @@ fun SearchSourcesScreen() {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (realSources.isEmpty()) "Подключенных источников пока нет. Добавьте RSS-ссылку в Подписках." else "Источников в этой папке не найдено.",
+                            text = "Источников не найдено.",
                             fontSize = 14.sp,
                             color = TextSecondary,
                             textAlign = TextAlign.Center,
@@ -207,9 +229,20 @@ fun SearchSourcesScreen() {
                 }
             } else {
                 items(filteredSources) { source ->
+                    var localSourceState by remember(source) { mutableStateOf(source) }
+                    
                     SourceSearchResultRow(
-                        source = source,
-                        onToggleSubscribe = { }
+                        source = localSourceState,
+                        onToggleSubscribe = {
+                            if (!localSourceState.isSubscribed && localSourceState.folderName == null) {
+                                coroutineScope.launch {
+                                    val success = RssRepository.addFeed(localSourceState.domain, null)
+                                    if (success) {
+                                        localSourceState = localSourceState.copy(isSubscribed = true)
+                                    }
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -222,6 +255,8 @@ fun SourceSearchResultRow(
     source: Source,
     onToggleSubscribe: () -> Unit
 ) {
+    var isAdding by remember { mutableStateOf(false) }
+    
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -267,23 +302,46 @@ fun SourceSearchResultRow(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.clickable { onToggleSubscribe() }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = DarkPrimary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "В «${source.folderName ?: "Подписках"}»",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextPrimary
-                )
+            if (source.isSubscribed || source.folderName != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.clickable { onToggleSubscribe() }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = DarkPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "В «${source.folderName ?: "Подписках"}»",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
+                }
+            } else {
+                Button(
+                    onClick = {
+                        isAdding = true
+                        onToggleSubscribe()
+                    },
+                    enabled = !isAdding,
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    if (isAdding) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Добавить", fontSize = 13.sp, color = Color.White)
+                    }
+                }
             }
         }
 

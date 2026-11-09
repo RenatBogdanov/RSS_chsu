@@ -29,26 +29,7 @@ fun RecommendationsScreen(
     val articlesList by feedViewModel.personalizedArticles.collectAsState()
     val listState = rememberLazyListState()
 
-    var displayLimit by remember(articlesList.size) {
-        mutableIntStateOf(25)
-    }
-
-    val visibleArticles = remember(articlesList, displayLimit) {
-        articlesList.take(displayLimit)
-    }
-
-    LaunchedEffect(listState, articlesList.size) {
-        snapshotFlow {
-            val layoutInfo = listState.layoutInfo
-            val totalItemsNumber = layoutInfo.totalItemsCount
-            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
-            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
-        }.collect { isNearEnd ->
-            if (isNearEnd && displayLimit < articlesList.size) {
-                displayLimit = (displayLimit + 25).coerceAtMost(articlesList.size)
-            }
-        }
-    }
+    // Compose LazyColumn автоматически отрисовывает элементы только когда они появляются на экране
 
     Column(
         modifier = Modifier
@@ -115,37 +96,26 @@ fun RecommendationsScreen(
                     }
                 }
 
-                items(visibleArticles, key = { it.id }) { article ->
+                items(articlesList, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
                 }
 
-                if (displayLimit < articlesList.size) {
-                    item(key = "loading_more_indicator") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = DarkPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = "Загрузка остальных рекомендаций...",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
+                item(key = "end_of_list_indicator") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Вы просмотрели все рекомендации.",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

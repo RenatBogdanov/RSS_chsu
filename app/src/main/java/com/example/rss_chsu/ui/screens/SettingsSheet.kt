@@ -39,11 +39,16 @@ fun SettingsSheet(
         }
 
         OutlinedButton(
-            onClick = onDismiss,
+            onClick = {
+                // Полная очистка всех данных (подписки, статьи, папки)
+                com.example.rss_chsu.ui.model.RssRepository.clearAllData()
+                onDismiss()
+            },
             modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = androidx.compose.ui.graphics.Color.Red)
         ) {
-            Text("Управление подписками", color = TextPrimary, fontWeight = FontWeight.Medium)
+            Text("Сбросить все данные (Тест)", color = androidx.compose.ui.graphics.Color.Red, fontWeight = FontWeight.Medium)
         }
 
         OutlinedButton(

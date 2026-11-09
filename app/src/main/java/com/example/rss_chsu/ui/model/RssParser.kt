@@ -27,10 +27,16 @@ object RssParser {
     private val dateFormatters = ThreadLocal.withInitial {
         listOf(
             SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm Z", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH),
             SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
             SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH),
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
+            SimpleDateFormat("dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+            SimpleDateFormat("dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
         ).onEach { it.timeZone = TimeZone.getTimeZone("UTC") }
     }
 
@@ -67,7 +73,7 @@ object RssParser {
         return str.trim()
     }
 
-    fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed", maxItemsToParse: Int = 200): Pair<Source, List<Article>> {
+    fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed", maxItemsToParse: Int = 500, skipItems: Int = 0): Pair<Source, List<Article>> {
         val articles = mutableListOf<Article>()
 
         // 1. Extract feed title
@@ -87,7 +93,9 @@ object RssParser {
         val enclosureRegex = Regex("""<enclosure[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         val mediaRegex = Regex("""<media:(?:content|thumbnail)[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-        val matches = itemRegex.findAll(xmlContent).take(maxItemsToParse)
+        val matches = itemRegex.findAll(xmlContent).drop(skipItems).take(maxItemsToParse)
+        val currentTimeMillis = System.currentTimeMillis()
+
         for (match in matches) {
             val block = match.groupValues[1]
 
@@ -135,9 +143,11 @@ object RssParser {
                 val readMins = (wordCount / 160).coerceAtLeast(1)
                 val relativeTime = parseRssDateToRelative(itemPubDate)
                 val russianDate = parseRssDateToRussian(itemPubDate)
+                val parsedMillis = parseDateToMillis(itemPubDate)
+                val publishedAtFinal = if (parsedMillis == 0L) currentTimeMillis - articles.size else parsedMillis
 
                 val article = Article(
-                    id = itemLink ?: (System.currentTimeMillis().toString() + "_" + articles.size),
+                    id = itemLink ?: (currentTimeMillis.toString() + "_" + articles.size),
                     title = cleanTitle,
                     subtitle = if (cleanSubtitle.isNotEmpty()) cleanSubtitle.take(150) else cleanContent.take(150),
                     content = if (cleanContent.isNotEmpty()) cleanContent else cleanTitle,
@@ -146,7 +156,7 @@ object RssParser {
                     author = cleanHtmlEntities(itemAuthor ?: ""),
                     date = relativeTime,
                     pubDateFormatted = russianDate,
-                    publishedAt = parseDateToMillis(itemPubDate),
+                    publishedAt = publishedAtFinal,
                     readTime = "$readMins мин чтения",
                     imageUrl = imgUrl ?: "",
                     isFeatured = articles.isEmpty(),
@@ -157,22 +167,8 @@ object RssParser {
             }
         }
 
-        if (articles.isEmpty() && xmlContent.isNotEmpty()) {
-            articles.add(
-                Article(
-                    id = "fallback_${System.currentTimeMillis()}",
-                    title = "Лента: $feedTitle",
-                    subtitle = "Материалы получены из RSS потока.",
-                    content = xmlContent.take(1000),
-                    sourceName = feedTitle,
-                    category = "RSS",
-                    date = "только что",
-                    pubDateFormatted = "Сегодня",
-                    readTime = "1 мин чтения",
-                    isFeatured = true
-                )
-            )
-        }
+        // Fallback-статьи больше не добавляем, чтобы не засорять базу мусорным XML кодом.
+        // Репозиторий теперь сам проверяет наличие валидных статей.
 
         val source = Source(
             id = feedTitle.hashCode().toString(),
@@ -215,6 +211,7 @@ object RssParser {
             minutes < 1 -> "только что"
             minutes < 60 -> "${minutes}м"
             hours < 24 -> "${hours}ч"
+            days < 1 -> "1д"
             days < 7 -> "${days}д"
             months < 12 -> "${months}мес"
             else -> "${years}г"

@@ -21,11 +21,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
 import coil.compose.AsyncImage
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Article
+import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun TodayFeedScreen(
@@ -38,35 +43,17 @@ fun TodayFeedScreen(
     val filterOptions = listOf("Для вас", "Все статьи", "Непрочитанные")
     val listState = rememberLazyListState()
 
+    var isRefreshing by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    val unreadCount = remember(articlesList) { articlesList.count { !it.isRead } }
+
     // Логика фильтрации статей на основе вкладок
     val filteredArticles = remember(selectedFilterIndex, articlesList) {
         when (selectedFilterIndex) {
             1 -> articlesList.filter { !it.isFeatured }
             2 -> articlesList.filter { !it.isFeatured && !it.isRead }
             else -> articlesList.filter { !it.isFeatured }
-        }
-    }
-
-    // Изначально показываем 25 статей, далее догружаем пачками при скролле вниз
-    var displayLimit by remember(selectedFilterIndex, filteredArticles.size) {
-        mutableIntStateOf(25)
-    }
-
-    val visibleArticles = remember(filteredArticles, displayLimit) {
-        filteredArticles.take(displayLimit)
-    }
-
-    // Автоматическая подгрузка при приближении к концу списка (Infinite Scroll)
-    LaunchedEffect(listState, filteredArticles.size) {
-        snapshotFlow {
-            val layoutInfo = listState.layoutInfo
-            val totalItemsNumber = layoutInfo.totalItemsCount
-            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
-            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
-        }.collect { isNearEnd ->
-            if (isNearEnd && displayLimit < filteredArticles.size) {
-                displayLimit = (displayLimit + 25).coerceAtMost(filteredArticles.size)
-            }
         }
     }
 
@@ -80,16 +67,36 @@ fun TodayFeedScreen(
     ) {
         TopAppLogoBar(
             rightAction = {
-                IconButton(onClick = onFilterClick) {
-                    Icon(
-                        imageVector = RssIcons.Tune,
-                        contentDescription = "Фильтр",
-                        tint = DarkPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        isRefreshing = true
+                        coroutineScope.launch {
+                            RssRepository.refreshAllSources()
+                            isRefreshing = false
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Обновить",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(onClick = onFilterClick) {
+                        Icon(
+                            imageVector = RssIcons.Tune,
+                            contentDescription = "Фильтр",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         )
+
+        if (isRefreshing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = DarkPrimary)
+        }
 
         if (articlesList.isEmpty()) {
             Box(
@@ -110,7 +117,7 @@ fun TodayFeedScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Перейдите во вкладку «Поиск», чтобы добавить RSS-источник.",
+                        text = "Перейдите во вкладку «Подписки», чтобы добавить RSS-источник.",
                         fontSize = 14.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
@@ -138,7 +145,7 @@ fun TodayFeedScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Новых статей: ${articlesList.size}",
+                            text = "Всего статей: ${articlesList.size} · Непрочитанных: $unreadCount",
                             fontSize = 13.sp,
                             color = TextSecondary
                         )
@@ -190,7 +197,7 @@ fun TodayFeedScreen(
                             color = TextPrimary
                         )
                         Text(
-                            text = "По времени",
+                            text = "Сначала новые",
                             fontSize = 13.sp,
                             color = TextSecondary
                         )
@@ -198,38 +205,42 @@ fun TodayFeedScreen(
                 }
 
                 // Article List Items
-                items(visibleArticles, key = { it.id }) { article ->
+                items(filteredArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
                 }
 
-                // Индикатор динамической подгрузки статей при пролистывании вниз
-                if (displayLimit < filteredArticles.size) {
-                    item(key = "loading_more_indicator") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = DarkPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Text(
-                                    text = "Загрузка остальных статей...",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
+                // Индикатор конца списка
+                item(key = "end_of_list_indicator") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = TextSecondary.copy(alpha = 0.5f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Вы просмотрели все доступные новости.",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "RSS-источники хранят ограниченное количество последних публикаций. Нажмите на значок обновления сверху, чтобы проверить свежие.",
+                            fontSize = 12.sp,
+                            color = TextSecondary.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                            lineHeight = 16.sp
+                        )
                     }
                 }
             }

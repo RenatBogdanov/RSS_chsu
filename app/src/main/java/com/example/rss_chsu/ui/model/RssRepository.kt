@@ -22,8 +22,9 @@ import java.nio.charset.Charset
 
 /** Лимиты кэша. Закладки в лимиты не входят и никогда не удаляются автоматически. */
 data class CachePolicy(
-    val maxArticles: Int = 500,
-    val maxAgeDays: Int = 30
+    val maxArticlesPerSource: Int = 500,
+    val maxArticles: Int = 2000,
+    val maxAgeDays: Int = 60
 ) {
     val maxAgeMillis: Long get() = maxAgeDays * 24L * 60 * 60 * 1000
 }
@@ -54,8 +55,6 @@ object RssRepository {
         dao = AppDatabase.get(context).articleDao()
         initialized = true
 
-        scope.launch { enforceCacheLimit() }
-
         scope.launch {
             dao.observeAll()
                 .map { list ->
@@ -66,7 +65,7 @@ object RssRepository {
                 .collect { articles ->
                     _articles.value = articles
 
-                    // Динамически обновляем количество статей и непрочитанных для источников
+                    // Динамически обновляем количество статей и точный счетчик непрочитанных для источников
                     val currentSources = _sources.value
                     if (currentSources.isNotEmpty()) {
                         _sources.value = currentSources.map { src ->
@@ -77,17 +76,51 @@ object RssRepository {
                                 (it.sourceName.equals(src.name, ignoreCase = true) || it.sourceName.equals(src.domain, ignoreCase = true)) && !it.isRead
                             }
                             src.copy(
-                                unreadCount = if (unreadForSource > 0) unreadForSource else totalForSource,
+                                unreadCount = unreadForSource,
                                 articlesPerWeek = "$totalForSource статей"
                             )
                         }
                     }
                 }
         }
+
+        scope.launch { enforceCacheLimit() }
+    }
+
+    /** Фоновое обновление свежих публикаций для всех подписок из сети */
+    suspend fun refreshAllSources(): Boolean = withContext(Dispatchers.IO) {
+        val currentSources = _sources.value
+        if (currentSources.isEmpty()) return@withContext false
+
+        var hasNewData = false
+        for (source in currentSources) {
+            try {
+                var cleanUrl = source.domain.trim()
+                if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                    cleanUrl = "https://$cleanUrl"
+                }
+                val response = KtorClient.httpClient.get(cleanUrl)
+                val bytes = response.readBytes()
+                val xmlText = decodeXmlBytes(bytes)
+
+                // Парсим 200 статей (но в фоне). Мы уже сделали загрузку в addFeed моментальной (там 30)
+                // А фоновое обновление (pull-to-refresh или при долистывании до конца) может грузить пачку побольше
+                val (_, fetchedArticles) = RssParser.parseRss(xmlText, source.name, maxItemsToParse = 200)
+                if (fetchedArticles.isNotEmpty()) {
+                    saveArticles(fetchedArticles)
+                    hasNewData = true
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        hasNewData
     }
 
     fun syncWithBackend() {
-        // Поддерживаем совместимость с FeedViewModel
+        scope.launch {
+            refreshAllSources()
+        }
     }
 
     private suspend fun saveArticles(list: List<Article>) {
@@ -96,7 +129,6 @@ object RssRepository {
 
         val entities = withContext(Dispatchers.Default) {
             list
-                // не кладём в кэш то, что тут же будет удалено по возрасту
                 .filter { it.publishedAt == 0L || it.publishedAt >= minPublished }
                 .map { it.toEntity(fetchedAt = now) }
         }
@@ -108,6 +140,13 @@ object RssRepository {
     suspend fun enforceCacheLimit() {
         val policy = cachePolicy
         dao.deleteOlderThan(System.currentTimeMillis() - policy.maxAgeMillis)
+
+        val currentSources = _sources.value
+        for (source in currentSources) {
+            dao.deleteOverLimitForSource(source.name, policy.maxArticlesPerSource)
+            dao.deleteOverLimitForSource(source.domain, policy.maxArticlesPerSource)
+        }
+
         dao.deleteOverLimit(policy.maxArticles)
     }
 
@@ -146,7 +185,11 @@ object RssRepository {
             val bytes = response.readBytes()
             val xmlText = decodeXmlBytes(bytes)
 
-            var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl, maxItemsToParse = 200)
+            var finalXmlText = xmlText
+            var finalCleanUrl = cleanUrl
+
+            // Парсим только первые 30 статей, чтобы моментально добавить источник
+            var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl, maxItemsToParse = 30)
 
             // Auto-discovery if user passed an HTML page with RSS links
             if (newArticles.isEmpty() && (xmlText.contains("<html", ignoreCase = true) || xmlText.contains("<!DOCTYPE", ignoreCase = true))) {
@@ -166,10 +209,12 @@ object RssRepository {
                     val discoveredResponse = KtorClient.httpClient.get(discoveredUrl)
                     val discoveredBytes = discoveredResponse.readBytes()
                     val discoveredXml = decodeXmlBytes(discoveredBytes)
-                    val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl, maxItemsToParse = 200)
+                    val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl, maxItemsToParse = 30)
                     if (discoveredResult.second.isNotEmpty()) {
                         source = discoveredResult.first
                         newArticles = discoveredResult.second
+                        finalXmlText = discoveredXml
+                        finalCleanUrl = discoveredUrl
                     }
                 }
             }
@@ -179,18 +224,20 @@ object RssRepository {
             }
 
             val sourceWithFolder = source.copy(
+                domain = finalCleanUrl, // Сохраняем проверенный URL для подгрузки автообновлений
                 folderName = targetFolder,
                 unreadCount = newArticles.size,
                 articlesPerWeek = "${newArticles.size} статей"
             )
 
-            // Запись всех распарсенных статей в БД (UI подтянет обновления через Flow)
+            // Моментально записываем первые 30 статей в БД
             saveArticles(newArticles)
 
             val currentSources = _sources.value.toMutableList()
             val existingIndex = currentSources.indexOfFirst { it.name == sourceWithFolder.name || it.domain == sourceWithFolder.domain }
             if (existingIndex >= 0) {
                 currentSources[existingIndex] = currentSources[existingIndex].copy(
+                    domain = finalCleanUrl,
                     folderName = targetFolder,
                     unreadCount = newArticles.size,
                     articlesPerWeek = "${newArticles.size} статей"
@@ -199,6 +246,14 @@ object RssRepository {
                 currentSources.add(sourceWithFolder)
             }
             _sources.value = currentSources
+            
+            // В фоне продолжаем допарсивать и догружать остаток (до 500)
+            scope.launch(Dispatchers.Default) {
+                val (_, restArticles) = RssParser.parseRss(finalXmlText, finalCleanUrl, maxItemsToParse = 470, skipItems = 30)
+                if (restArticles.isNotEmpty()) {
+                    saveArticles(restArticles)
+                }
+            }
 
             true
         } catch (e: Exception) {
@@ -233,5 +288,15 @@ object RssRepository {
 
     fun toggleRead(articleId: String) {
         scope.launch { dao.toggleRead(articleId) }
+    }
+
+    /** Полная очистка всех данных приложения для тестирования (статьи, подписки, папки) */
+    fun clearAllData() {
+        scope.launch {
+            dao.deleteAll()
+            _sources.value = emptyList()
+            _folders.value = emptyList()
+            // _articles очистятся сами через Flow от БД
+        }
     }
 }
