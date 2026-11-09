@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -23,15 +25,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.components.RssIcons
-import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Folder
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.launch
+
+import androidx.compose.foundation.lazy.rememberLazyListState
 
 @Composable
 fun SubscriptionsScreen(
-    onAddSourceClick: () -> Unit,
+    onAddSourceClick: () -> Unit = {},
     onMenuClick: () -> Unit = {}
 ) {
     val realFolders by RssRepository.folders.collectAsState()
@@ -41,12 +45,25 @@ fun SubscriptionsScreen(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var newFolderNameInput by remember { mutableStateOf("") }
 
+    var selectedFolderForAdd by remember(realFolders) {
+        mutableStateOf(realFolders.firstOrNull()?.name)
+    }
+
+    var isAddingFeed by remember { mutableStateOf(false) }
+    var addStatusMessage by remember { mutableStateOf<String?>(null) }
+    var showHelpDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    var rssUrlInput by remember { mutableStateOf("") }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
@@ -69,13 +86,28 @@ fun SubscriptionsScreen(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
-                        IconButton(onClick = onMenuClick) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Меню",
-                                tint = DarkPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            /*IconButton(
+                                onClick = { showHelpDialog = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Text(
+                                    text = "?",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DarkPrimary
+                                )
+                            }*/
+                            IconButton(onClick = onMenuClick) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Меню",
+                                    tint = DarkPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
@@ -87,8 +119,125 @@ fun SubscriptionsScreen(
                 }
             }
 
-            // All Articles Banner Card
+            // Add custom RSS feed card
             item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = LightSurfaceContainer
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Добавить RSS ленту",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            IconButton(
+                                onClick = { showHelpDialog = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text(
+                                    text = "?",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DarkPrimary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = rssUrlInput,
+                            onValueChange = { rssUrlInput = it },
+                            placeholder = { Text("https://...", fontSize = 13.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Show folder selector only if user has created folders
+                        if (realFolders.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Папка назначения:",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(realFolders) { folder ->
+                                    val isSelected = selectedFolderForAdd == folder.name
+                                    FilterChipPill(
+                                        text = folder.name,
+                                        isSelected = isSelected,
+                                        onClick = { selectedFolderForAdd = folder.name }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                if (rssUrlInput.isNotBlank()) {
+                                    isAddingFeed = true
+                                    addStatusMessage = null
+                                    coroutineScope.launch {
+                                        val targetFolderToUse = if (realFolders.isNotEmpty()) selectedFolderForAdd else null
+                                        val success = RssRepository.addFeed(rssUrlInput.trim(), targetFolderToUse)
+                                        isAddingFeed = false
+                                        if (success) {
+                                            addStatusMessage = if (targetFolderToUse != null) "Лента успешно добавлена в «$targetFolderToUse»!" else "Лента успешно добавлена!"
+                                            rssUrlInput = ""
+                                        } else {
+                                            addStatusMessage = "Не удалось загрузить RSS. Проверьте ссылку."
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isAddingFeed,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+                        ) {
+                            if (isAddingFeed) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text("Добавить источник")
+                        }
+
+                        if (addStatusMessage != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = addStatusMessage!!,
+                                fontSize = 13.sp,
+                                color = if (addStatusMessage!!.contains("успешно")) Color(0xFF2E7D32) else Color(0xFFC62828)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // All Articles Banner Card
+            /*item {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -135,7 +284,7 @@ fun SubscriptionsScreen(
                         }
                     }
                 }
-            }
+            }*/
 
             if (realFolders.isNotEmpty()) {
                 item {
@@ -190,7 +339,7 @@ fun SubscriptionsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "📁 У вас пока нет источников.\nПерейдите в Поиск, чтобы добавить первую RSS-ленту.",
+                            text = "У вас пока нет источников.\nДобавьте RSS-ленту выше, чтобы подгрузить новости.",
                             fontSize = 14.sp,
                             color = TextSecondary,
                             textAlign = TextAlign.Center,
@@ -285,6 +434,90 @@ fun SubscriptionsScreen(
                 dismissButton = {
                     TextButton(onClick = { showCreateFolderDialog = false }) {
                         Text("Отмена", color = TextSecondary)
+                    }
+                }
+            )
+        }
+
+        // Help Dialog Instructions
+        if (showHelpDialog) {
+            AlertDialog(
+                onDismissRequest = { showHelpDialog = false },
+                containerColor = LightSurface,
+                title = {
+                    Text(
+                        text = "Как найти RSS-ссылку?",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "1. Откройте нужный новостной сайт или блог в браузере.\n" +
+                                "2. Найдите значок RSS или ссылку «RSS» в подвале сайта (футере) или меню.\n" +
+                                "3. Скопируйте прямую ссылку на RSS и вставьте её в поле ввода.\n\n" +
+                                "Или нажмите на любой пример ниже, чтобы вставить его:",
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            lineHeight = 18.sp
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ChipUnselected,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    rssUrlInput = "https://lenta.ru/rss/news"
+                                    showHelpDialog = false
+                                }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "Лента.ру", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "https://lenta.ru/rss/news", fontSize = 11.sp, color = DarkPrimary)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ChipUnselected,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    rssUrlInput = "https://www.interfax.ru/rss.asp"
+                                    showHelpDialog = false
+                                }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "Интерфакс", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "https://www.interfax.ru/rss.asp", fontSize = 11.sp, color = DarkPrimary)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ChipUnselected,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    rssUrlInput = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"
+                                    showHelpDialog = false
+                                }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "РБК", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss", fontSize = 11.sp, color = DarkPrimary)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showHelpDialog = false }) {
+                        Text("Понятно", fontWeight = FontWeight.Bold, color = DarkPrimary)
                     }
                 }
             )

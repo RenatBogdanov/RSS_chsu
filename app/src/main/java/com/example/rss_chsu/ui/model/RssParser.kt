@@ -23,24 +23,51 @@ object RssParser {
         "September" to "сентября", "October" to "октября", "November" to "ноября", "December" to "декабря"
     )
 
-    private fun cleanHtmlEntities(input: String): String {
-        if (input.isEmpty()) return ""
-        return try {
-            Html.fromHtml(input, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-        } catch (_: Exception) {
-            input.replace("&laquo;", "«")
-                .replace("&raquo;", "»")
-                .replace("&quot;", "\"")
-                .replace("&nbsp;", " ")
-                .replace("&mdash;", "—")
-                .replace("&ndash;", "–")
-                .replace("&hellip;", "…")
-                .replace("&amp;", "&")
-                .trim()
-        }
+    // Кэшированные форматтеры дат на поток (избавляет от трат CPU на создание SimpleDateFormat в цикле)
+    private val dateFormatters = ThreadLocal.withInitial {
+        listOf(
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
+        ).onEach { it.timeZone = TimeZone.getTimeZone("UTC") }
     }
 
-    fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed"): Pair<Source, List<Article>> {
+    private val dayFormat = ThreadLocal.withInitial { SimpleDateFormat("EEE", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
+    private val dayNumFormat = ThreadLocal.withInitial { SimpleDateFormat("dd", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
+    private val monthFormat = ThreadLocal.withInitial { SimpleDateFormat("MMM", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
+
+    /** Очистка HTML-сущностей с быстрой оптимизацией для обычного текста. */
+    private fun cleanHtmlEntities(input: String): String {
+        if (input.isEmpty()) return ""
+        var str = input.trim()
+        if (!str.contains('&') && !str.contains('<')) return str
+
+        str = str.replace("&laquo;", "«")
+            .replace("&raquo;", "»")
+            .replace("&quot;", "\"")
+            .replace("&nbsp;", " ")
+            .replace("&mdash;", "—")
+            .replace("&ndash;", "–")
+            .replace("&hellip;", "…")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+
+        if (str.contains('<') || str.contains('&')) {
+            return try {
+                Html.fromHtml(str, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+            } catch (_: Exception) {
+                str.replace(Regex("<.*?>"), "").trim()
+            }
+        }
+        return str.trim()
+    }
+
+    fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed", maxItemsToParse: Int = 200): Pair<Source, List<Article>> {
         val articles = mutableListOf<Article>()
 
         // 1. Extract feed title
@@ -60,7 +87,7 @@ object RssParser {
         val enclosureRegex = Regex("""<enclosure[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         val mediaRegex = Regex("""<media:(?:content|thumbnail)[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-        val matches = itemRegex.findAll(xmlContent)
+        val matches = itemRegex.findAll(xmlContent).take(maxItemsToParse)
         for (match in matches) {
             val block = match.groupValues[1]
 
@@ -164,17 +191,9 @@ object RssParser {
     fun parseDateToMillis(dateStr: String?): Long {
         if (dateStr.isNullOrEmpty()) return 0L
 
-        val formats = listOf(
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
-        )
-
+        val formats = dateFormatters.get()!!
         for (format in formats) {
             try {
-                format.timeZone = TimeZone.getTimeZone("UTC")
                 val date = format.parse(dateStr.trim())
                 if (date != null) return date.time
             } catch (_: Exception) {}
@@ -211,18 +230,10 @@ object RssParser {
     private fun parseRssDateToRussian(dateStr: String?): String {
         if (dateStr.isNullOrEmpty()) return "Сегодня"
 
-        val formats = listOf(
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
-        )
-
+        val formats = dateFormatters.get()!!
         var dateObj: java.util.Date? = null
         for (format in formats) {
             try {
-                format.timeZone = TimeZone.getTimeZone("UTC")
                 dateObj = format.parse(dateStr.trim())
                 if (dateObj != null) break
             } catch (_: Exception) {}
@@ -230,13 +241,9 @@ object RssParser {
 
         if (dateObj == null) return dateStr
 
-        val dayFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
-        val dayNumFormat = SimpleDateFormat("dd", Locale.ENGLISH)
-        val monthFormat = SimpleDateFormat("MMM", Locale.ENGLISH)
-
-        val engDay = dayFormat.format(dateObj)
-        val dayNum = dayNumFormat.format(dateObj)
-        val engMonth = monthFormat.format(dateObj)
+        val engDay = dayFormat.get()!!.format(dateObj)
+        val dayNum = dayNumFormat.get()!!.format(dateObj)
+        val engMonth = monthFormat.get()!!.format(dateObj)
 
         val rusDay = russianDays[engDay] ?: engDay
         val rusMonth = russianMonths[engMonth] ?: engMonth

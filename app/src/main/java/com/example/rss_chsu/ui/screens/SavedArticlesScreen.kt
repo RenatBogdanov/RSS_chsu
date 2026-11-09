@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
@@ -28,6 +29,28 @@ fun SavedArticlesScreen(
 ) {
     val allArticles by feedViewModel.articles.collectAsState()
     val savedArticles = allArticles.filter { it.isBookmarked }
+    val listState = rememberLazyListState()
+
+    var displayLimit by remember(savedArticles.size) {
+        mutableIntStateOf(25)
+    }
+
+    val visibleArticles = remember(savedArticles, displayLimit) {
+        savedArticles.take(displayLimit)
+    }
+
+    LaunchedEffect(listState, savedArticles.size) {
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val totalItemsNumber = layoutInfo.totalItemsCount
+            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
+            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
+        }.collect { isNearEnd ->
+            if (isNearEnd && displayLimit < savedArticles.size) {
+                displayLimit = (displayLimit + 25).coerceAtMost(savedArticles.size)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -59,7 +82,7 @@ fun SavedArticlesScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "🔖 Нет сохраненных статей",
+                        text = "Нет сохраненных статей",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -75,6 +98,7 @@ fun SavedArticlesScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
@@ -82,10 +106,10 @@ fun SavedArticlesScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
                     ) {
                         Text(
-                            text = "Сохраненное",
+                            text = "Сохранённое",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -99,11 +123,38 @@ fun SavedArticlesScreen(
                     }
                 }
 
-                items(savedArticles) { article ->
+                items(visibleArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
+                }
+
+                if (displayLimit < savedArticles.size) {
+                    item(key = "loading_more_indicator") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = DarkPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    text = "Загрузка остальных статей...",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

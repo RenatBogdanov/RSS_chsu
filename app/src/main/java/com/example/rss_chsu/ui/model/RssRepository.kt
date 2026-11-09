@@ -63,7 +63,26 @@ object RssRepository {
                     list.mapIndexed { index, entity -> entity.toArticle().copy(isFeatured = index == 0) }
                 }
                 .flowOn(Dispatchers.Default)
-                .collect { _articles.value = it }
+                .collect { articles ->
+                    _articles.value = articles
+
+                    // Динамически обновляем количество статей и непрочитанных для источников
+                    val currentSources = _sources.value
+                    if (currentSources.isNotEmpty()) {
+                        _sources.value = currentSources.map { src ->
+                            val totalForSource = articles.count {
+                                it.sourceName.equals(src.name, ignoreCase = true) || it.sourceName.equals(src.domain, ignoreCase = true)
+                            }
+                            val unreadForSource = articles.count {
+                                (it.sourceName.equals(src.name, ignoreCase = true) || it.sourceName.equals(src.domain, ignoreCase = true)) && !it.isRead
+                            }
+                            src.copy(
+                                unreadCount = if (unreadForSource > 0) unreadForSource else totalForSource,
+                                articlesPerWeek = "$totalForSource статей"
+                            )
+                        }
+                    }
+                }
         }
     }
 
@@ -116,18 +135,18 @@ object RssRepository {
         }
     }
 
-    suspend fun addFeed(inputUrl: String, targetFolder: String? = null): Boolean {
+    suspend fun addFeed(inputUrl: String, targetFolder: String? = null): Boolean = withContext(Dispatchers.IO) {
         var cleanUrl = inputUrl.trim()
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
             cleanUrl = "https://$cleanUrl"
         }
 
-        return try {
+        try {
             val response = KtorClient.httpClient.get(cleanUrl)
             val bytes = response.readBytes()
             val xmlText = decodeXmlBytes(bytes)
 
-            var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl)
+            var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl, maxItemsToParse = 200)
 
             // Auto-discovery if user passed an HTML page with RSS links
             if (newArticles.isEmpty() && (xmlText.contains("<html", ignoreCase = true) || xmlText.contains("<!DOCTYPE", ignoreCase = true))) {
@@ -147,7 +166,7 @@ object RssRepository {
                     val discoveredResponse = KtorClient.httpClient.get(discoveredUrl)
                     val discoveredBytes = discoveredResponse.readBytes()
                     val discoveredXml = decodeXmlBytes(discoveredBytes)
-                    val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl)
+                    val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl, maxItemsToParse = 200)
                     if (discoveredResult.second.isNotEmpty()) {
                         source = discoveredResult.first
                         newArticles = discoveredResult.second
@@ -156,18 +175,26 @@ object RssRepository {
             }
 
             if (newArticles.isEmpty()) {
-                return false
+                return@withContext false
             }
 
-            val sourceWithFolder = source.copy(folderName = targetFolder)
+            val sourceWithFolder = source.copy(
+                folderName = targetFolder,
+                unreadCount = newArticles.size,
+                articlesPerWeek = "${newArticles.size} статей"
+            )
 
-            // Было: правка списка в памяти. Стало: запись в БД, UI обновится через Flow.
+            // Запись всех распарсенных статей в БД (UI подтянет обновления через Flow)
             saveArticles(newArticles)
 
             val currentSources = _sources.value.toMutableList()
             val existingIndex = currentSources.indexOfFirst { it.name == sourceWithFolder.name || it.domain == sourceWithFolder.domain }
             if (existingIndex >= 0) {
-                currentSources[existingIndex] = currentSources[existingIndex].copy(folderName = targetFolder)
+                currentSources[existingIndex] = currentSources[existingIndex].copy(
+                    folderName = targetFolder,
+                    unreadCount = newArticles.size,
+                    articlesPerWeek = "${newArticles.size} статей"
+                )
             } else {
                 currentSources.add(sourceWithFolder)
             }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +27,28 @@ fun RecommendationsScreen(
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val articlesList by feedViewModel.personalizedArticles.collectAsState()
+    val listState = rememberLazyListState()
+
+    var displayLimit by remember(articlesList.size) {
+        mutableIntStateOf(25)
+    }
+
+    val visibleArticles = remember(articlesList, displayLimit) {
+        articlesList.take(displayLimit)
+    }
+
+    LaunchedEffect(listState, articlesList.size) {
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val totalItemsNumber = layoutInfo.totalItemsCount
+            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
+            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
+        }.collect { isNearEnd ->
+            if (isNearEnd && displayLimit < articlesList.size) {
+                displayLimit = (displayLimit + 25).coerceAtMost(articlesList.size)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -57,7 +80,7 @@ fun RecommendationsScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "✨ Рекомендации пока пусты",
+                        text = "Рекомендации пока пусты",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -73,6 +96,7 @@ fun RecommendationsScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
@@ -80,7 +104,7 @@ fun RecommendationsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
                     ) {
                         Text(
                             text = "Рекомендации",
@@ -88,20 +112,41 @@ fun RecommendationsScreen(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Подборка по вашим закладкам и прочитанному",
-                            fontSize = 13.sp,
-                            color = TextSecondary
-                        )
                     }
                 }
 
-                items(articlesList) { article ->
+                items(visibleArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
+                }
+
+                if (displayLimit < articlesList.size) {
+                    item(key = "loading_more_indicator") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = DarkPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    text = "Загрузка остальных рекомендаций...",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

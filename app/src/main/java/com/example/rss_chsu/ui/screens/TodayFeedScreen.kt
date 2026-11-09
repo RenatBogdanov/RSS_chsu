@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,12 +36,38 @@ fun TodayFeedScreen(
 ) {
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     val filterOptions = listOf("Для вас", "Все статьи", "Непрочитанные")
+    val listState = rememberLazyListState()
 
     // Логика фильтрации статей на основе вкладок
-    val filteredArticles = when (selectedFilterIndex) {
-        1 -> articlesList.filter { !it.isFeatured }
-        2 -> articlesList.filter { !it.isFeatured && !it.isRead }
-        else -> articlesList.filter { !it.isFeatured }
+    val filteredArticles = remember(selectedFilterIndex, articlesList) {
+        when (selectedFilterIndex) {
+            1 -> articlesList.filter { !it.isFeatured }
+            2 -> articlesList.filter { !it.isFeatured && !it.isRead }
+            else -> articlesList.filter { !it.isFeatured }
+        }
+    }
+
+    // Изначально показываем 25 статей, далее догружаем пачками при скролле вниз
+    var displayLimit by remember(selectedFilterIndex, filteredArticles.size) {
+        mutableIntStateOf(25)
+    }
+
+    val visibleArticles = remember(filteredArticles, displayLimit) {
+        filteredArticles.take(displayLimit)
+    }
+
+    // Автоматическая подгрузка при приближении к концу списка (Infinite Scroll)
+    LaunchedEffect(listState, filteredArticles.size) {
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val totalItemsNumber = layoutInfo.totalItemsCount
+            val lastVisibleItemIndex = (layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0)
+            totalItemsNumber > 0 && lastVisibleItemIndex >= totalItemsNumber - 4
+        }.collect { isNearEnd ->
+            if (isNearEnd && displayLimit < filteredArticles.size) {
+                displayLimit = (displayLimit + 25).coerceAtMost(filteredArticles.size)
+            }
+        }
     }
 
     // Находим главную статью в живом списке
@@ -76,7 +103,7 @@ fun TodayFeedScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "📭 Лента пока пуста",
+                        text = "Лента пока пуста",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -92,6 +119,7 @@ fun TodayFeedScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
@@ -100,7 +128,7 @@ fun TodayFeedScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
                     ) {
                         Text(
                             text = "Сегодня",
@@ -137,7 +165,7 @@ fun TodayFeedScreen(
 
                 // Featured Article Card
                 if (featured != null) {
-                    item {
+                    item(key = "featured_${featured.id}") {
                         FeaturedArticleCard(
                             article = featured,
                             onClick = { onArticleClick(featured) },
@@ -170,11 +198,39 @@ fun TodayFeedScreen(
                 }
 
                 // Article List Items
-                items(filteredArticles) { article ->
+                items(visibleArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
                     )
+                }
+
+                // Индикатор динамической подгрузки статей при пролистывании вниз
+                if (displayLimit < filteredArticles.size) {
+                    item(key = "loading_more_indicator") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = DarkPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    text = "Загрузка остальных статей...",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

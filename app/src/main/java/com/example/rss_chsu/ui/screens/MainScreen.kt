@@ -14,7 +14,6 @@ import com.example.rss_chsu.ui.model.FeedViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    // viewModel() здесь и в экранах вкладок возвращает один и тот же экземпляр (общий владелец — Activity)
     feedViewModel: FeedViewModel = viewModel()
 ) {
     var currentTab by remember { mutableStateOf(NavTab.TODAY) }
@@ -23,14 +22,10 @@ fun MainScreen(
 
     val articles by feedViewModel.articles.collectAsState()
 
-    // Открытая статья — это снимок на момент клика. Берём её актуальную версию из БД,
-    // чтобы закладка и «прочитано» сразу отображались в читалке.
-    // Если статьи уже нет в кэше, показываем снимок.
     val openedArticle = selectedArticle?.let { selected ->
         articles.firstOrNull { it.id == selected.id } ?: selected
     }
 
-    // Любая открытая статья (из ленты, закладок или рекомендаций) считается прочитанной
     LaunchedEffect(selectedArticle?.id) {
         selectedArticle?.id?.let { feedViewModel.onArticleRead(it) }
     }
@@ -39,19 +34,7 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        if (openedArticle != null) {
-            // Перехватываем системную кнопку «Назад» на смартфоне
-            BackHandler {
-                selectedArticle = null // Закрываем статью и возвращаемся к текущей вкладке
-            }
-
-            ArticleReaderScreen(
-                article = openedArticle,
-                onBackClick = { selectedArticle = null },
-                onBookmarkClick = { feedViewModel.onBookmarkClick(openedArticle.id) },
-                onReadToggle = { feedViewModel.onReadToggle(openedArticle.id) }
-            )
-        } else {
+        Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 bottomBar = {
                     RSSBottomBar(
@@ -85,6 +68,19 @@ fun MainScreen(
                         )
                     }
                 }
+            }
+
+            if (openedArticle != null) {
+                BackHandler {
+                    selectedArticle = null
+                }
+
+                ArticleReaderScreen(
+                    article = openedArticle,
+                    onBackClick = { selectedArticle = null },
+                    onBookmarkClick = { feedViewModel.onBookmarkClick(openedArticle.id) },
+                    onReadToggle = { feedViewModel.onReadToggle(openedArticle.id) }
+                )
             }
         }
 
