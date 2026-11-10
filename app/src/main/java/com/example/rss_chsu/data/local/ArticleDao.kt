@@ -60,6 +60,9 @@ interface ArticleDao {
     )
     suspend fun deleteOverLimit(max: Int): Int
 
+    @Query("DELETE FROM articles WHERE sourceName = :sourceDomain OR sourceName = :sourceName OR id LIKE '%' || :sourceDomain || '%' OR id LIKE '%' || :sourceName || '%'")
+    suspend fun deleteArticlesBySource(sourceDomain: String, sourceName: String)
+
     @Query("DELETE FROM articles")
     suspend fun deleteAll()
 }

@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.components.RssIcons
@@ -52,6 +53,8 @@ fun SubscriptionsScreen(
     var isAddingFeed by remember { mutableStateOf(false) }
     var addStatusMessage by remember { mutableStateOf<String?>(null) }
     var showHelpDialog by remember { mutableStateOf(false) }
+    var sourceToMove by remember { mutableStateOf<Source?>(null) }
+    
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -72,8 +75,7 @@ fun SubscriptionsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+                        .padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -304,15 +306,28 @@ fun SubscriptionsScreen(
                     }
                 }
 
-                items(realFolders) { folder ->
+                items(
+                    items = realFolders,
+                    key = { it.id }
+                ) { folder ->
                     val sourcesInFolder = realSources.filter { it.folderName == folder.name }
-                    FolderItemRow(
-                        folder = folder,
-                        sourcesInFolder = sourcesInFolder,
-                        onToggleExpand = {
-                            RssRepository.toggleFolderExpanded(folder.id)
-                        }
-                    )
+                    SwipeToDeleteContainer(
+                        onDelete = { RssRepository.deleteFolder(folder.id) }
+                    ) {
+                        FolderItemRow(
+                            folder = folder,
+                            sourcesInFolder = sourcesInFolder,
+                            onToggleExpand = {
+                                RssRepository.toggleFolderExpanded(folder.id)
+                            },
+                            onDeleteSource = { sourceId -> 
+                                RssRepository.deleteSource(sourceId) 
+                            },
+                            onMoveSource = { source ->
+                                sourceToMove = source
+                            }
+                        )
+                    }
                 }
 
                 val unassignedSources = realSources.filter { it.folderName == null }
@@ -326,8 +341,18 @@ fun SubscriptionsScreen(
                             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
                         )
                     }
-                    items(unassignedSources) { source ->
-                        SourceSubItemRow(source = source)
+                    items(
+                        items = unassignedSources,
+                        key = { it.id }
+                    ) { source ->
+                        SwipeToDeleteContainer(
+                            onDelete = { RssRepository.deleteSource(source.domain) }
+                        ) {
+                            SourceSubItemRow(
+                                source = source, 
+                                onMoveClick = { sourceToMove = source }
+                            )
+                        }
                     }
                 }
             } else if (realSources.isEmpty()) {
@@ -365,8 +390,18 @@ fun SubscriptionsScreen(
                     }
                 }
 
-                items(realSources) { source ->
-                    SourceSubItemRow(source = source)
+                items(
+                    items = realSources,
+                    key = { it.id }
+                ) { source ->
+                    SwipeToDeleteContainer(
+                        onDelete = { RssRepository.deleteSource(source.domain) }
+                    ) {
+                        SourceSubItemRow(
+                            source = source,
+                            onMoveClick = { sourceToMove = source }
+                        )
+                    }
                 }
             }
         }
@@ -522,6 +557,63 @@ fun SubscriptionsScreen(
                 }
             )
         }
+
+        // Dialog for moving a source to a folder
+        if (sourceToMove != null) {
+            AlertDialog(
+                onDismissRequest = { sourceToMove = null },
+                containerColor = LightSurface,
+                title = { Text("Переместить источник", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+                text = {
+                    Column {
+                        Text(
+                            text = "Выберите папку для «${sourceToMove?.name}»",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = "Без папки",
+                                    fontSize = 16.sp,
+                                    color = TextPrimary,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            RssRepository.updateSourceFolder(sourceToMove!!.domain, null)
+                                            sourceToMove = null
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp)
+                                )
+                            }
+                            items(realFolders) { folder ->
+                                Text(
+                                    text = folder.name,
+                                    fontSize = 16.sp,
+                                    color = TextPrimary,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            RssRepository.updateSourceFolder(sourceToMove!!.domain, folder.name)
+                                            sourceToMove = null
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { sourceToMove = null }) {
+                        Text("Отмена", color = TextSecondary)
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -529,10 +621,12 @@ fun SubscriptionsScreen(
 fun FolderItemRow(
     folder: Folder,
     sourcesInFolder: List<Source>,
-    onToggleExpand: () -> Unit
+    onToggleExpand: () -> Unit,
+    onDeleteSource: (String) -> Unit,
+    onMoveSource: (Source) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
     ) {
         Row(
             modifier = Modifier
@@ -597,7 +691,11 @@ fun FolderItemRow(
                     )
                 } else {
                     sourcesInFolder.forEach { source ->
-                        SourceSubItemRow(source = source, horizontalPadding = 0.dp)
+                        SwipeToDeleteContainer(
+                            onDelete = { onDeleteSource(source.domain) }
+                        ) {
+                            SourceSubItemRow(source = source, horizontalPadding = 0.dp)
+                        }
                     }
                 }
             }
@@ -608,12 +706,13 @@ fun FolderItemRow(
 @Composable
 fun SourceSubItemRow(
     source: Source,
-    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp
+    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp,
+    onMoveClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { }
+            .clickable { onMoveClick?.invoke() }
             .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -638,7 +737,7 @@ fun SourceSubItemRow(
                 )
             }
 
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = source.name,
                     fontSize = 15.sp,
@@ -648,7 +747,9 @@ fun SourceSubItemRow(
                 Text(
                     text = source.domain,
                     fontSize = 11.sp,
-                    color = TextSecondary
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -668,4 +769,58 @@ fun SourceSubItemRow(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SwipeToDeleteContainer(
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        },
+        positionalThreshold = { it * 0.5f }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val color by androidx.compose.animation.animateColorAsState(
+                targetValue = when (dismissState.targetValue) {
+                    SwipeToDismissBoxValue.EndToStart -> Color(0xFFFF5252)
+                    else -> MaterialTheme.colorScheme.background
+                }, label = "color"
+            )
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color)
+                    .padding(end = 16.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                    Text(
+                        text = "Удалить",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        content = {
+            Box(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                content()
+            }
+        }
+    )
 }

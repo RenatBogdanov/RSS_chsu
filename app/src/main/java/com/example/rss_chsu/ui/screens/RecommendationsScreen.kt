@@ -85,7 +85,7 @@ fun RecommendationsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp)
                     ) {
                         Text(
                             text = "Рекомендации",

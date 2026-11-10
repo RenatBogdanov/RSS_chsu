@@ -73,6 +73,33 @@ object RssParser {
         return str.trim()
     }
 
+    private fun formatFeedTitle(title: String): String {
+        var clean = title.trim()
+        // Убираем длинные SEO-хвосты, отрезая по популярным разделителям
+        val separators = listOf(" - ", " — ", " | ", ": ")
+        for (sep in separators) {
+            if (clean.contains(sep)) {
+                val parts = clean.split(sep)
+                if (parts[0].isNotEmpty() && parts[0].length < 30) {
+                    clean = parts[0]
+                    break
+                }
+            }
+        }
+        if (clean.length > 35) {
+            clean = clean.take(35) + "..."
+        }
+        return clean.trim()
+    }
+
+    private fun formatFeedDescription(desc: String): String {
+        var clean = desc.trim().replace(Regex("\\s+"), " ")
+        if (clean.length > 120) {
+            clean = clean.take(120) + "..."
+        }
+        return clean
+    }
+
     fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed", maxItemsToParse: Int = 500, skipItems: Int = 0): Pair<Source, List<Article>> {
         val articles = mutableListOf<Article>()
 
@@ -81,11 +108,11 @@ object RssParser {
         val rawFeedTitle = titleMatch?.groupValues?.get(1)
             ?.replace("<![CDATA[", "")?.replace("]]>", "")
             ?.replace(Regex("<.*?>"), "")?.trim() ?: sourceNameDefault
-        val feedTitle = cleanHtmlEntities(rawFeedTitle)
+        val feedTitle = formatFeedTitle(cleanHtmlEntities(rawFeedTitle))
 
         // 2. Extract feed description
         val descMatch = Regex("""<(?:channel|feed)[^>]*>[\s\S]*?<(?:description|subtitle)[^>]*>([\s\S]*?)</(?:description|subtitle)>""", RegexOption.IGNORE_CASE).find(xmlContent)
-        val feedDescription = cleanHtmlEntities(descMatch?.groupValues?.get(1)?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim() ?: "")
+        val feedDescription = formatFeedDescription(cleanHtmlEntities(descMatch?.groupValues?.get(1)?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim() ?: ""))
 
         // 3. Extract items / entries
         val itemRegex = Regex("""<(?:item|entry)[\s\S]*?>([\s\S]*?)</(?:item|entry)>""", RegexOption.IGNORE_CASE)
@@ -211,9 +238,8 @@ object RssParser {
             minutes < 1 -> "только что"
             minutes < 60 -> "${minutes}м"
             hours < 24 -> "${hours}ч"
-            days < 1 -> "1д"
-            days < 7 -> "${days}д"
-            months < 12 -> "${months}мес"
+            days < 31 -> "${days}д"
+            months < 12 -> "${months.coerceAtLeast(1)}мес"
             else -> "${years}г"
         }
     }

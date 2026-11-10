@@ -19,8 +19,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.example.rss_chsu.ui.model.RssRepository
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.example.rss_chsu.ui.model.Source
@@ -92,8 +95,7 @@ fun SearchSourcesScreen() {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)
                 ) {
                     Text(
                         text = "Найти источник",
@@ -256,6 +258,7 @@ fun SourceSearchResultRow(
     onToggleSubscribe: () -> Unit
 ) {
     var isAdding by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
     
     Column(
         modifier = Modifier
@@ -287,27 +290,42 @@ fun SourceSearchResultRow(
                     )
                 }
 
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = source.name,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = source.domain,
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clickable { clipboardManager.setText(AnnotatedString(source.domain)) }
+                    ) {
+                        Text(
+                            text = source.domain,
+                            fontSize = 12.sp,
+                            color = DarkPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
                 }
             }
 
             if (source.isSubscribed || source.folderName != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.clickable { onToggleSubscribe() }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.clickable { onToggleSubscribe() }.padding(start = 8.dp)
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
@@ -315,11 +333,12 @@ fun SourceSearchResultRow(
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "В «${source.folderName ?: "Подписках"}»",
+                        text = "В «Подписках»",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary
                     )
+                    }
                 }
             } else {
                 Button(
@@ -330,7 +349,7 @@ fun SourceSearchResultRow(
                     enabled = !isAdding,
                     colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(32.dp)
+                    modifier = Modifier.height(32.dp).padding(start = 8.dp)
                 ) {
                     if (isAdding) {
                         CircularProgressIndicator(
@@ -351,7 +370,8 @@ fun SourceSearchResultRow(
             text = source.description,
             fontSize = 13.sp,
             color = TextSecondary,
-            lineHeight = 18.sp
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

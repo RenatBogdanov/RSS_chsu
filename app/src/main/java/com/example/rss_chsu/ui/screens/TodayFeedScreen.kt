@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,25 +39,41 @@ fun TodayFeedScreen(
     onFilterClick: () -> Unit = {}
 ) {
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
-    val filterOptions = listOf("Для вас", "Все статьи", "Непрочитанные")
+    val filterOptions = listOf("Все", "Для вас", "Новые")
     val listState = rememberLazyListState()
 
     var isRefreshing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
+    var isAscendingSort by remember { mutableStateOf(false) } // false = сначала новые, true = сначала старые
     val unreadCount = remember(articlesList) { articlesList.count { !it.isRead } }
+
+    // Ограничиваем количество статей на главном экране во избежание OutOfMemory при тысячах элементов
+    val displayLimit by remember { mutableIntStateOf(500) }
 
     // Логика фильтрации статей на основе вкладок
     val filteredArticles = remember(selectedFilterIndex, articlesList) {
-        when (selectedFilterIndex) {
-            1 -> articlesList.filter { !it.isFeatured }
-            2 -> articlesList.filter { !it.isFeatured && !it.isRead }
-            else -> articlesList.filter { !it.isFeatured }
+        val filtered = when (selectedFilterIndex) {
+            2 -> articlesList.filter { !it.isFeatured && !it.isRead } // Непрочитанные
+            else -> articlesList.filter { !it.isFeatured }            // Все / Для вас
         }
+        filtered.take(displayLimit)
     }
 
-    // Находим главную статью в живом списке
-    val featured = articlesList.find { it.isFeatured } ?: articlesList.firstOrNull()
+    // Применяем сортировку ко всем отфильтрованным статьям
+    val sortedArticles = remember(filteredArticles, isAscendingSort) {
+        if (isAscendingSort) filteredArticles.reversed() else filteredArticles
+    }
+
+    // Находим главную статью в живом списке (если сортировка "Сначала старые", то главная статья тоже меняется на самую старую)
+    val featured = remember(articlesList, isAscendingSort) {
+        val nonFeaturedList = articlesList.filter { !it.isFeatured }.take(displayLimit)
+        if (isAscendingSort && nonFeaturedList.isNotEmpty()) {
+            nonFeaturedList.last()
+        } else {
+            articlesList.find { it.isFeatured } ?: articlesList.firstOrNull()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -135,7 +150,7 @@ fun TodayFeedScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp)
                     ) {
                         Text(
                             text = "Сегодня",
@@ -152,19 +167,83 @@ fun TodayFeedScreen(
                     }
                 }
 
-                // Filter Chips Row
+                // Filter Segmented Control
                 item {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .background(ChipUnselected, RoundedCornerShape(14.dp))
+                            .height(40.dp)
+                            .padding(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(filterOptions.size) { index ->
+                        filterOptions.forEachIndexed { index, optionText ->
                             val isSelected = selectedFilterIndex == index
-                            FilterChipPill(
-                                text = filterOptions[index],
-                                isSelected = isSelected,
-                                onClick = { selectedFilterIndex = index }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                    .clickable { selectedFilterIndex = index },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = optionText, 
+                                    fontSize = 12.sp, 
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, 
+                                    color = if (isSelected) TextPrimary else TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Sorting Segmented Control
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 2.dp, bottom = 16.dp)
+                            .background(ChipUnselected, RoundedCornerShape(12.dp))
+                            .height(36.dp)
+                            .padding(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (!isAscendingSort) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                .clickable { isAscendingSort = false },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Сначала новые", 
+                                fontSize = 12.sp, 
+                                fontWeight = if (!isAscendingSort) FontWeight.Bold else FontWeight.Medium, 
+                                color = if (!isAscendingSort) TextPrimary else TextSecondary
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isAscendingSort) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                .clickable { isAscendingSort = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Сначала старые", 
+                                fontSize = 12.sp, 
+                                fontWeight = if (isAscendingSort) FontWeight.Bold else FontWeight.Medium, 
+                                color = if (isAscendingSort) TextPrimary else TextSecondary
                             )
                         }
                     }
@@ -196,16 +275,11 @@ fun TodayFeedScreen(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
-                        Text(
-                            text = "Сначала новые",
-                            fontSize = 13.sp,
-                            color = TextSecondary
-                        )
                     }
                 }
 
                 // Article List Items
-                items(filteredArticles, key = { it.id }) { article ->
+                items(sortedArticles, key = { it.id }) { article ->
                     FeedArticleRow(
                         article = article,
                         onClick = { onArticleClick(article) }
