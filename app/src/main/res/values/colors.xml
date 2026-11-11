@@ -2,7 +2,7 @@
 <resources>
     <!-- Палитра -->
     <color name="palette_primary">#486B85</color>       <!-- Steel Blue: кнопки, акценты, иконки -->
-    <color name="palette_background">#CAD2CB</color>    <!-- Light Sage Grey: комфортный мягкий фон страниц -->
+    <color name="palette_background">#F7F7F5</color>    <!-- Светлый серый фон страниц -->
     <color name="palette_surface">#FFFFFF</color>       <!-- Белый: контрастный фон карточек и шторок -->
     <color name="palette_text_main">#020608</color>     <!-- Deep Black: основной чёткий текст -->
     <color name="palette_text_sub">#1C252B</color>      <!-- Dark Slate: второстепенный текст, рамки -->

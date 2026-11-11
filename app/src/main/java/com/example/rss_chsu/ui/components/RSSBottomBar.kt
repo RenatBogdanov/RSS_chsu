@@ -8,22 +8,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.theme.DarkPrimary
-import com.example.rss_chsu.ui.theme.LightCardBorder
 import com.example.rss_chsu.ui.theme.TextSecondary
 
 enum class NavTab(val title: String, val icon: ImageVector) {
-    TODAY("Сегодня", RssIcons.Today),
+    TODAY("Новости", RssIcons.Today),
     SUBSCRIPTIONS("Подписки", RssIcons.Subscriptions),
-    RECOMMENDATIONS("Рекомендации", RssIcons.Recommendations),
     SEARCH("Поиск", Icons.Default.Search),
-    SAVED("Закладки", RssIcons.Bookmark)
+    SAVED("Закладки", RssIcons.Bookmark),
+    PROFILE("Профиль", RssIcons.Profile)
 }
 
 @Composable
@@ -33,55 +30,71 @@ fun RSSBottomBar(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawLine(
-                    color = LightCardBorder,
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-            },
+        modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            NavTab.entries.forEach { tab ->
-                val isSelected = currentTab == tab
-                val color = if (isSelected) DarkPrimary else TextSecondary
+            // Тонкая черта сверху меню приложения
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 1.dp,
+                color = DarkPrimary
+            )
 
-                Column(
-                    modifier = Modifier
-                        .clickable { onTabSelected(tab) }
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.title,
-                        tint = color,
-                        modifier = Modifier.size(20.dp)
-                    )
+            // Компактный ряд иконок меню приложения
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                NavTab.entries.forEach { tab ->
+                    val isSelected = currentTab == tab
+                    val color = if (isSelected) DarkPrimary else TextSecondary
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Column(
+                        modifier = Modifier
+                            .clickable { onTabSelected(tab) }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.title,
+                            tint = color,
+                            modifier = Modifier.size(20.dp)
+                        )
 
-                    Text(
-                        text = tab.title,
-                        fontSize = 10.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = color,
-                        maxLines = 1
-                    )
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        Text(
+                            text = tab.title,
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = color,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
+
+            // Тонкая черта снизу меню приложения (отделяет от системного меню телефона)
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 1.dp,
+                color = DarkPrimary
+            )
+
+            // Системный отступ под кнопки/жесты телефона
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsBottomHeight(WindowInsets.navigationBars)
+            )
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.example.rss_chsu.ui.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -31,16 +33,18 @@ fun SavedArticlesScreen(
     val savedArticles = allArticles.filter { it.isBookmarked }
     val listState = rememberLazyListState()
 
-    // Compose LazyColumn автоматически отрисовывает элементы только когда они появляются на экране
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppLogoBar(
+            title = "ЗАКЛАДКИ (${savedArticles.size})",
             rightAction = {
-                IconButton(onClick = onMenuClick) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "Меню",
@@ -83,32 +87,15 @@ fun SavedArticlesScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp)
+                items(savedArticles, key = { it.id }) { article ->
+                    SwipeToDeleteBookmarkContainer(
+                        onDelete = { feedViewModel.onBookmarkClick(article.id) }
                     ) {
-                        Text(
-                            text = "Закладки",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Сохранено статей: ${savedArticles.size}",
-                            fontSize = 13.sp,
-                            color = TextSecondary
+                        FeedArticleRow(
+                            article = article,
+                            onClick = { onArticleClick(article) }
                         )
                     }
-                }
-
-                items(savedArticles, key = { it.id }) { article ->
-                    FeedArticleRow(
-                        article = article,
-                        onClick = { onArticleClick(article) }
-                    )
                 }
 
                 item(key = "end_of_list_indicator") {
@@ -129,4 +116,58 @@ fun SavedArticlesScreen(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SwipeToDeleteBookmarkContainer(
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        },
+        positionalThreshold = { it * 0.5f }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val color by animateColorAsState(
+                targetValue = when (dismissState.targetValue) {
+                    SwipeToDismissBoxValue.EndToStart -> Color(0xFFFF5252)
+                    else -> MaterialTheme.colorScheme.background
+                }, label = "color"
+            )
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color)
+                    .padding(end = 16.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                    Text(
+                        text = "Удалить",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        content = {
+            Box(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                content()
+            }
+        }
+    )
 }

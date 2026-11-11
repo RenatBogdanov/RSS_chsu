@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.theme.*
@@ -203,14 +204,22 @@ fun ArticleReaderScreen(
                             .fillMaxWidth()
                             .height(220.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(ChipUnselected),
+                            .background(Color(0xFFA0A0A0)),
                         contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = article.imageUrl,
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                Icon(
+                                    imageVector = RssIcons.Subscriptions,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         )
                     }
                     Spacer(modifier = Modifier.height(24.dp))

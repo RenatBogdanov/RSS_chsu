@@ -1,11 +1,15 @@
 package com.example.rss_chsu.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 val LightBackground = Color(0xFFF7F7F5)
 val LightSurface = Color(0xFFFFFFFF)
@@ -50,6 +54,15 @@ fun RSS_chsuTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = LightColorScheme
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = true
+            insetsController.isAppearanceLightNavigationBars = true
+        }
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,

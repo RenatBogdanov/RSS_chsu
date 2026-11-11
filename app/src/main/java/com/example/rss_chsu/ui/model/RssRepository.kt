@@ -75,12 +75,8 @@ object RssRepository {
                     val currentSources = _sources.value
                     if (currentSources.isNotEmpty()) {
                         _sources.value = currentSources.map { src ->
-                            val totalForSource = articles.count {
-                                it.sourceName.equals(src.name, ignoreCase = true) || it.sourceName.equals(src.domain, ignoreCase = true)
-                            }
-                            val unreadForSource = articles.count {
-                                (it.sourceName.equals(src.name, ignoreCase = true) || it.sourceName.equals(src.domain, ignoreCase = true)) && !it.isRead
-                            }
+                            val totalForSource = articles.count { src.matchesArticle(it) }
+                            val unreadForSource = articles.count { src.matchesArticle(it) && !it.isRead }
                             src.copy(
                                 unreadCount = unreadForSource,
                                 articlesPerWeek = "$totalForSource статей"
@@ -233,7 +229,10 @@ object RssRepository {
                 }
     
                 // Проверяем, есть ли уже этот источник в нашем каталоге популярных
-                val knownSource = PopularSources.topFeeds.find { it.domain == finalCleanUrl }
+                val knownSource = PopularSources.topFeeds.find { 
+                    it.domain.equals(finalCleanUrl, ignoreCase = true) || 
+                    (extractDomainKeywords(it.domain).isNotEmpty() && extractDomainKeywords(it.domain) == extractDomainKeywords(finalCleanUrl))
+                }
                 
                 val sourceWithFolder = if (knownSource != null) {
                     // Если это известный источник из поиска, сохраняем его аккуратное название и описание

@@ -38,7 +38,10 @@ fun RecommendationsScreen(
     ) {
         TopAppLogoBar(
             rightAction = {
-                IconButton(onClick = onFilterClick) {
+                IconButton(
+                    onClick = onFilterClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = RssIcons.Recommendations,
                         contentDescription = "Рекомендации",

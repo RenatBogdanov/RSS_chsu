@@ -44,11 +44,31 @@ object RssParser {
     private val dayNumFormat = ThreadLocal.withInitial { SimpleDateFormat("dd", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
     private val monthFormat = ThreadLocal.withInitial { SimpleDateFormat("MMM", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
 
+    /** Очистка от мусорных спецсимволов, replacement character, BOM и управляющих кодов */
+    fun cleanGarbageText(input: String): String {
+        if (input.isEmpty()) return ""
+        var str = input
+            .replace("\uFFFC", "") // OBJECT REPLACEMENT CHARACTER
+            .replace("\uFFFD", "") // REPLACEMENT CHARACTER
+            .replace("\uFEFF", "") // ZERO WIDTH NO-BREAK SPACE / BOM
+            .replace("\u200B", "") // ZERO WIDTH SPACE
+            .replace("\u200C", "") // ZERO WIDTH NON-JOINER
+            .replace("\u200D", "") // ZERO WIDTH JOINER
+            .replace(Regex("[\u0000-\u0008\u000B\u000C\u000E-\u001F]"), "")
+            .replace(Regex(" {2,}"), " ")
+            .trim()
+        
+        str = str.replace(Regex("(?i)\\[OBJ\\]"), "")
+            .replace(Regex("(?i)\\(OBJ\\)"), "")
+            .trim()
+            
+        return str
+    }
+
     /** Очистка HTML-сущностей с быстрой оптимизацией для обычного текста. */
     private fun cleanHtmlEntities(input: String): String {
         if (input.isEmpty()) return ""
         var str = input.trim()
-        if (!str.contains('&') && !str.contains('<')) return str
 
         str = str.replace("&laquo;", "«")
             .replace("&raquo;", "»")
@@ -63,14 +83,17 @@ object RssParser {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
 
-        if (str.contains('<') || str.contains('&')) {
-            return try {
-                Html.fromHtml(str, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+        val htmlCleaned = if (str.contains('<') || str.contains('&')) {
+            try {
+                Html.fromHtml(str, Html.FROM_HTML_MODE_LEGACY).toString()
             } catch (_: Exception) {
-                str.replace(Regex("<.*?>"), "").trim()
+                str.replace(Regex("<.*?>"), "")
             }
+        } else {
+            str
         }
-        return str.trim()
+
+        return cleanGarbageText(htmlCleaned)
     }
 
     private fun formatFeedTitle(title: String): String {

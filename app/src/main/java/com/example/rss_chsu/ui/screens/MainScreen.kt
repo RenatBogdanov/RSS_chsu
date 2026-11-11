@@ -57,15 +57,17 @@ fun MainScreen(
                             onAddSourceClick = { currentTab = NavTab.SEARCH },
                             onMenuClick = { showSettingsSheet = true }
                         )
-                        NavTab.RECOMMENDATIONS -> RecommendationsScreen(
-                            onArticleClick = { selectedArticle = it },
-                            onFilterClick = { showSettingsSheet = true }
-                        )
                         NavTab.SEARCH -> SearchSourcesScreen()
                         NavTab.SAVED -> SavedArticlesScreen(
                             onArticleClick = { selectedArticle = it },
                             onMenuClick = { showSettingsSheet = true }
                         )
+                        NavTab.PROFILE -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            Text("Профиль (в разработке)")
+                        }
                     }
                 }
             }
