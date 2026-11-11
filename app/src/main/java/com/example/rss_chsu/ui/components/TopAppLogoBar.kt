@@ -5,53 +5,67 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.theme.DarkPrimary
-import com.example.rss_chsu.ui.theme.LightCardBorder
 
 @Composable
 fun TopAppLogoBar(
     modifier: Modifier = Modifier,
-    rightAction: @Composable (() -> Unit)? = null
+    title: String = "НОВОСТИ",
+    rightAction: @Composable (() -> Unit)? = null,
+    content: (@Composable RowScope.() -> Unit)? = null
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .drawBehind {
-                drawLine(
-                    color = LightCardBorder,
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width, size.height),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-            }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = RssIcons.Subscriptions,
-                contentDescription = null,
-                tint = DarkPrimary,
-                modifier = Modifier.size(18.dp)
+        Column {
+            // Тонкая линия сверху (газетный стиль)
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                thickness = 1.dp,
+                color = DarkPrimary
             )
-            Text(
-                text = "RSS-reader",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (content != null) {
+                    content()
+                } else {
+                    Text(
+                        text = title,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        color = DarkPrimary,
+                        letterSpacing = 2.sp
+                    )
+
+                    rightAction?.invoke()
+                }
+            }
+            
+            // Двойная линия снизу (классический газетный стиль)
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 2.dp,
+                color = DarkPrimary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 1.dp,
                 color = DarkPrimary
             )
         }
-
-        rightAction?.invoke()
     }
 }

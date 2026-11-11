@@ -17,12 +17,15 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.net.URI
 import java.nio.charset.Charset
 
 /** Лимиты кэша. Закладки в лимиты не входят и никогда не удаляются автоматически. */
 data class CachePolicy(
-    val maxArticles: Int = 500,
+    val maxArticlesPerSource: Int = 100,
+    val maxArticles: Int = 1000,
     val maxAgeDays: Int = 30
 ) {
     val maxAgeMillis: Long get() = maxAgeDays * 24L * 60 * 60 * 1000
@@ -31,6 +34,10 @@ data class CachePolicy(
 object RssRepository {
 
     var cachePolicy = CachePolicy()
+    
+    // Ограничитель одновременных загрузок RSS-лент
+    // Защищает приложение от вылета (OOM), если попытаться добавить 200 ссылок разом
+    private val fetchSemaphore = Semaphore(3)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var dao: ArticleDao
@@ -54,8 +61,6 @@ object RssRepository {
         dao = AppDatabase.get(context).articleDao()
         initialized = true
 
-        scope.launch { enforceCacheLimit() }
-
         scope.launch {
             dao.observeAll()
                 .map { list ->
@@ -63,12 +68,63 @@ object RssRepository {
                     list.mapIndexed { index, entity -> entity.toArticle().copy(isFeatured = index == 0) }
                 }
                 .flowOn(Dispatchers.Default)
-                .collect { _articles.value = it }
+                .collect { articles ->
+                    _articles.value = articles
+
+                    // Динамически обновляем количество статей и точный счетчик непрочитанных для источников
+                    val currentSources = _sources.value
+                    if (currentSources.isNotEmpty()) {
+                        _sources.value = currentSources.map { src ->
+                            val totalForSource = articles.count { src.matchesArticle(it) }
+                            val unreadForSource = articles.count { src.matchesArticle(it) && !it.isRead }
+                            src.copy(
+                                unreadCount = unreadForSource,
+                                articlesPerWeek = "$totalForSource статей"
+                            )
+                        }
+                    }
+                }
         }
+
+        scope.launch { enforceCacheLimit() }
+    }
+
+    /** Фоновое обновление свежих публикаций для всех подписок из сети */
+    suspend fun refreshAllSources(): Boolean = withContext(Dispatchers.IO) {
+        val currentSources = _sources.value
+        if (currentSources.isEmpty()) return@withContext false
+
+        var hasNewData = false
+        for (source in currentSources) {
+            try {
+                var cleanUrl = source.domain.trim()
+                if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                    cleanUrl = "https://$cleanUrl"
+                }
+                // Ограничиваем одновременный парсинг для предотвращения зависаний
+                fetchSemaphore.withPermit {
+                    val response = KtorClient.httpClient.get(cleanUrl)
+                    val bytes = response.readBytes()
+                    val xmlText = decodeXmlBytes(bytes)
+
+                    // Парсим статьи последовательно в фоне
+                    val (_, fetchedArticles) = RssParser.parseRss(xmlText, source.name, maxItemsToParse = 500)
+                    if (fetchedArticles.isNotEmpty()) {
+                        saveArticles(fetchedArticles)
+                        hasNewData = true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        hasNewData
     }
 
     fun syncWithBackend() {
-        // Поддерживаем совместимость с FeedViewModel
+        scope.launch {
+            refreshAllSources()
+        }
     }
 
     private suspend fun saveArticles(list: List<Article>) {
@@ -77,7 +133,6 @@ object RssRepository {
 
         val entities = withContext(Dispatchers.Default) {
             list
-                // не кладём в кэш то, что тут же будет удалено по возрасту
                 .filter { it.publishedAt == 0L || it.publishedAt >= minPublished }
                 .map { it.toEntity(fetchedAt = now) }
         }
@@ -89,6 +144,13 @@ object RssRepository {
     suspend fun enforceCacheLimit() {
         val policy = cachePolicy
         dao.deleteOlderThan(System.currentTimeMillis() - policy.maxAgeMillis)
+
+        val currentSources = _sources.value
+        for (source in currentSources) {
+            dao.deleteOverLimitForSource(source.name, policy.maxArticlesPerSource)
+            dao.deleteOverLimitForSource(source.domain, policy.maxArticlesPerSource)
+        }
+
         dao.deleteOverLimit(policy.maxArticles)
     }
 
@@ -116,64 +178,112 @@ object RssRepository {
         }
     }
 
-    suspend fun addFeed(inputUrl: String, targetFolder: String? = null): Boolean {
+    suspend fun addFeed(inputUrl: String, targetFolder: String? = null): Boolean = withContext(Dispatchers.IO) {
         var cleanUrl = inputUrl.trim()
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
             cleanUrl = "https://$cleanUrl"
         }
 
-        return try {
-            val response = KtorClient.httpClient.get(cleanUrl)
-            val bytes = response.readBytes()
-            val xmlText = decodeXmlBytes(bytes)
-
-            var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl)
-
-            // Auto-discovery if user passed an HTML page with RSS links
-            if (newArticles.isEmpty() && (xmlText.contains("<html", ignoreCase = true) || xmlText.contains("<!DOCTYPE", ignoreCase = true))) {
-                val rssLinkMatch = Regex("""<link[^>]+type=["']application/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(xmlText)
-                    ?: Regex("""<a[^>]+href=["']([^"']*rss[^"']*)["']""", RegexOption.IGNORE_CASE).find(xmlText)
-
-                if (rssLinkMatch != null) {
-                    var discoveredUrl = rssLinkMatch.groupValues[1]
-                    if (discoveredUrl.startsWith("/")) {
-                        val baseUri = URI(cleanUrl)
-                        discoveredUrl = "${baseUri.scheme}://${baseUri.host}$discoveredUrl"
-                    } else if (!discoveredUrl.startsWith("http://") && !discoveredUrl.startsWith("https://")) {
-                        val baseUri = URI(cleanUrl)
-                        discoveredUrl = "${baseUri.scheme}://${baseUri.host}/$discoveredUrl"
-                    }
-
-                    val discoveredResponse = KtorClient.httpClient.get(discoveredUrl)
-                    val discoveredBytes = discoveredResponse.readBytes()
-                    val discoveredXml = decodeXmlBytes(discoveredBytes)
-                    val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl)
-                    if (discoveredResult.second.isNotEmpty()) {
-                        source = discoveredResult.first
-                        newArticles = discoveredResult.second
+        try {
+            fetchSemaphore.withPermit {
+                val response = KtorClient.httpClient.get(cleanUrl)
+                val bytes = response.readBytes()
+                val xmlText = decodeXmlBytes(bytes)
+    
+                var finalXmlText = xmlText
+                var finalCleanUrl = cleanUrl
+    
+                // Парсим только первые 30 статей, чтобы моментально добавить источник
+                var (source, newArticles) = RssParser.parseRss(xmlText, cleanUrl, maxItemsToParse = 30)
+    
+                // Auto-discovery if user passed an HTML page with RSS links
+                if (newArticles.isEmpty() && (xmlText.contains("<html", ignoreCase = true) || xmlText.contains("<!DOCTYPE", ignoreCase = true))) {
+                    val rssLinkMatch = Regex("""<link[^>]+type=["']application/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(xmlText)
+                        ?: Regex("""<a[^>]+href=["']([^"']*rss[^"']*)["']""", RegexOption.IGNORE_CASE).find(xmlText)
+    
+                    if (rssLinkMatch != null) {
+                        var discoveredUrl = rssLinkMatch.groupValues[1]
+                        if (discoveredUrl.startsWith("/")) {
+                            val baseUri = URI(cleanUrl)
+                            discoveredUrl = "${baseUri.scheme}://${baseUri.host}$discoveredUrl"
+                        } else if (!discoveredUrl.startsWith("http://") && !discoveredUrl.startsWith("https://")) {
+                            val baseUri = URI(cleanUrl)
+                            discoveredUrl = "${baseUri.scheme}://${baseUri.host}/$discoveredUrl"
+                        }
+    
+                        val discoveredResponse = KtorClient.httpClient.get(discoveredUrl)
+                        val discoveredBytes = discoveredResponse.readBytes()
+                        val discoveredXml = decodeXmlBytes(discoveredBytes)
+                        val discoveredResult = RssParser.parseRss(discoveredXml, discoveredUrl, maxItemsToParse = 30)
+                        if (discoveredResult.second.isNotEmpty()) {
+                            source = discoveredResult.first
+                            newArticles = discoveredResult.second
+                            finalXmlText = discoveredXml
+                            finalCleanUrl = discoveredUrl
+                        }
                     }
                 }
+    
+                if (newArticles.isEmpty()) {
+                    return@withContext false
+                }
+    
+                // Проверяем, есть ли уже этот источник в нашем каталоге популярных
+                val knownSource = PopularSources.topFeeds.find { 
+                    it.domain.equals(finalCleanUrl, ignoreCase = true) || 
+                    (extractDomainKeywords(it.domain).isNotEmpty() && extractDomainKeywords(it.domain) == extractDomainKeywords(finalCleanUrl))
+                }
+                
+                val sourceWithFolder = if (knownSource != null) {
+                    // Если это известный источник из поиска, сохраняем его аккуратное название и описание
+                    knownSource.copy(
+                        folderName = targetFolder,
+                        unreadCount = newArticles.size,
+                        articlesPerWeek = "${newArticles.size} статей",
+                        isSubscribed = true
+                    )
+                } else {
+                    // Если это полностью кастомный источник, берем то, что распарсили
+                    source.copy(
+                        domain = finalCleanUrl,
+                        folderName = targetFolder,
+                        unreadCount = newArticles.size,
+                        articlesPerWeek = "${newArticles.size} статей"
+                    )
+                }
+    
+                // Моментально записываем первые 30 статей в БД
+                saveArticles(newArticles)
+    
+                val currentSources = _sources.value.toMutableList()
+                val existingIndex = currentSources.indexOfFirst { it.name == sourceWithFolder.name || it.domain == sourceWithFolder.domain }
+                if (existingIndex >= 0) {
+                    currentSources[existingIndex] = currentSources[existingIndex].copy(
+                        domain = finalCleanUrl,
+                        folderName = targetFolder,
+                        unreadCount = newArticles.size,
+                        articlesPerWeek = "${newArticles.size} статей",
+                        name = sourceWithFolder.name, // восстанавливаем красивое имя
+                        description = sourceWithFolder.description, // восстанавливаем красивое описание
+                        logoText = sourceWithFolder.logoText // восстанавливаем логотип
+                    )
+                } else {
+                    currentSources.add(sourceWithFolder)
+                }
+                _sources.value = currentSources
+                
+                // В фоне продолжаем допарсивать и догружать остаток (до 500)
+                scope.launch(Dispatchers.Default) {
+                    fetchSemaphore.withPermit {
+                        val (_, restArticles) = RssParser.parseRss(finalXmlText, finalCleanUrl, maxItemsToParse = 470, skipItems = 30)
+                        if (restArticles.isNotEmpty()) {
+                            saveArticles(restArticles)
+                        }
+                    }
+                }
+    
+                true
             }
-
-            if (newArticles.isEmpty()) {
-                return false
-            }
-
-            val sourceWithFolder = source.copy(folderName = targetFolder)
-
-            // Было: правка списка в памяти. Стало: запись в БД, UI обновится через Flow.
-            saveArticles(newArticles)
-
-            val currentSources = _sources.value.toMutableList()
-            val existingIndex = currentSources.indexOfFirst { it.name == sourceWithFolder.name || it.domain == sourceWithFolder.domain }
-            if (existingIndex >= 0) {
-                currentSources[existingIndex] = currentSources[existingIndex].copy(folderName = targetFolder)
-            } else {
-                currentSources.add(sourceWithFolder)
-            }
-            _sources.value = currentSources
-
-            true
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -206,5 +316,42 @@ object RssRepository {
 
     fun toggleRead(articleId: String) {
         scope.launch { dao.toggleRead(articleId) }
+    }
+
+    fun deleteFolder(folderId: String) {
+        val folder = _folders.value.find { it.id == folderId }
+        if (folder != null) {
+            _sources.value = _sources.value.map {
+                if (it.folderName == folder.name) it.copy(folderName = null) else it
+            }
+            _folders.value = _folders.value.filter { it.id != folderId }
+        }
+    }
+
+    fun deleteSource(sourceDomain: String) {
+        val source = _sources.value.find { it.domain == sourceDomain }
+        if (source != null) {
+            _sources.value = _sources.value.filter { it.domain != sourceDomain }
+            scope.launch {
+                // Удаляем статьи и по домену, и по имени источника (на случай, если id сгенерирован по имени)
+                dao.deleteArticlesBySource(sourceDomain, source.name)
+            }
+        }
+    }
+
+    fun updateSourceFolder(sourceDomain: String, newFolderName: String?) {
+        _sources.value = _sources.value.map {
+            if (it.domain == sourceDomain) it.copy(folderName = newFolderName) else it
+        }
+    }
+
+    /** Полная очистка всех данных приложения для тестирования (статьи, подписки, папки) */
+    fun clearAllData() {
+        scope.launch {
+            dao.deleteAll()
+            _sources.value = emptyList()
+            _folders.value = emptyList()
+            // _articles очистятся сами через Flow от БД
+        }
     }
 }

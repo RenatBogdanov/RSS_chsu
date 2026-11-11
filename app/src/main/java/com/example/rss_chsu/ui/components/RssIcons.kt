@@ -214,4 +214,36 @@ object RssIcons {
             }
         }.build()
     }
+
+    val Profile: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Profile",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 1.8f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // Head outline
+                moveTo(12f, 11f)
+                curveTo(13.93f, 11f, 15.5f, 9.43f, 15.5f, 7.5f)
+                curveTo(15.5f, 5.57f, 13.93f, 4f, 12f, 4f)
+                curveTo(10.07f, 4f, 8.5f, 5.57f, 8.5f, 7.5f)
+                curveTo(8.5f, 9.43f, 10.07f, 11f, 12f, 11f)
+                close()
+
+                // Shoulders / Body outline
+                moveTo(5f, 20f)
+                curveTo(5f, 16.13f, 8.13f, 13f, 12f, 13f)
+                curveTo(15.87f, 13f, 19f, 16.13f, 19f, 20f)
+                lineTo(5f, 20f)
+                close()
+            }
+        }.build()
+    }
 }

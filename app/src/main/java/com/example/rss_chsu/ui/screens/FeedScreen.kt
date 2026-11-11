@@ -14,9 +14,15 @@ fun FeedScreen(
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val articlesList by feedViewModel.articles.collectAsState()
+    val personalizedArticles by feedViewModel.personalizedArticles.collectAsState()
+    val sourcesList by com.example.rss_chsu.ui.model.RssRepository.sources.collectAsState()
+    val foldersList by com.example.rss_chsu.ui.model.RssRepository.folders.collectAsState()
 
     TodayFeedScreen(
         articlesList = articlesList,
+        personalizedArticles = personalizedArticles,
+        sourcesList = sourcesList,
+        foldersList = foldersList,
         onArticleClick = { article ->
             feedViewModel.onArticleRead(article.id)
             onNavClick(article) // Передаем кликнутую статью в MainScreen

@@ -54,12 +54,12 @@ fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
 
 fun ArticleEntity.toArticle(): Article = Article(
     id = id,
-    title = title,
-    subtitle = subtitle,
-    content = content,
+    title = RssParser.cleanGarbageText(title),
+    subtitle = RssParser.cleanGarbageText(subtitle),
+    content = RssParser.cleanGarbageText(content),
     sourceName = sourceName,
     category = category,
-    author = author,
+    author = RssParser.cleanGarbageText(author),
     // относительная дата пересчитывается при каждой загрузке из БД, чтобы не «протухала»
     date = RssParser.relativeFromMillis(publishedAt),
     pubDateFormatted = pubDateFormatted,

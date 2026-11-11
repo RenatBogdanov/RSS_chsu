@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.RSS_chsu" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.RSS_chsu" parent="Theme.Material3.Light.NoActionBar">
         <!-- Привязка палитры пользователя -->
         <item name="colorPrimary">@color/palette_primary</item>
         <item name="colorOnPrimary">@color/white</item>
@@ -12,6 +12,9 @@
         <item name="colorOnSurfaceVariant">@color/palette_text_sub</item>
 
         <item name="colorOutline">@color/palette_text_sub</item>
+
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <style name="Theme.RSS_chsu" parent="Base.Theme.RSS_chsu" />

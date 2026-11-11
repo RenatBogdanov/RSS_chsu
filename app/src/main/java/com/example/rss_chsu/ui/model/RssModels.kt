@@ -35,6 +35,63 @@ data class Source(
     val unreadCount: Int = 0
 )
 
+private val ignoreSubdomainsAndTlds = setOf(
+    "www", "rss", "rssexport", "feed", "daily", "export", "inc", "xml", "news",
+    "ru", "com", "io", "media", "org", "net", "info", "me", "co", "dev", "asp", "php"
+)
+
+fun extractDomainKeywords(text: String): Set<String> {
+    if (text.isBlank()) return emptySet()
+    val keywords = mutableSetOf<String>()
+    val host = text
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .takeWhile { it != '/' && it != '?' && it != ':' }
+        .lowercase()
+
+    val parts = host.split(".")
+    for (part in parts) {
+        val clean = part.lowercase().trim()
+        if (clean.length >= 2 && !ignoreSubdomainsAndTlds.contains(clean)) {
+            keywords.add(clean)
+        }
+    }
+    return keywords
+}
+
+fun Source.matchesArticle(article: Article): Boolean {
+    val srcName = article.sourceName.trim()
+    val url = article.id.trim()
+    if (srcName.isBlank() && url.isBlank()) return false
+
+    // 1. Direct equality match
+    if (name.equals(srcName, ignoreCase = true) || domain.equals(srcName, ignoreCase = true)) {
+        return true
+    }
+
+    // 2. Direct Cyrillic / English name match
+    if (name.length >= 2) {
+        if (srcName.equals(name, ignoreCase = true) ||
+            (srcName.length >= 3 && (srcName.contains(name, ignoreCase = true) || name.contains(srcName, ignoreCase = true)))
+        ) {
+            return true
+        }
+    }
+
+    // 3. Core domain keyword matching (e.g., "rbc" for РБК, "cherinfo" for ЧерИнфо, "lenta" for Lenta.ru)
+    val sourceKeywords = extractDomainKeywords(domain) + extractDomainKeywords(name)
+    val articleKeywords = extractDomainKeywords(url) + extractDomainKeywords(srcName)
+
+    if (sourceKeywords.isNotEmpty() && articleKeywords.isNotEmpty()) {
+        val common = sourceKeywords.intersect(articleKeywords)
+        if (common.isNotEmpty()) {
+            return true
+        }
+    }
+
+    return false
+}
+
 @Serializable
 data class Folder(
     val id: String,

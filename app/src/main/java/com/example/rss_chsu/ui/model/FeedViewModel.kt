@@ -25,7 +25,7 @@ class FeedViewModel : ViewModel() {
     // Персональные рекомендации: пересчитываются при любом изменении БД
     // (новая статья, закладка, прочтение)
     val personalizedArticles: StateFlow<List<Article>> = articles
-        .map { RecommendationEngine(it).getPersonalized(limit = 20) }
+        .map { RecommendationEngine(it).getPersonalized(limit = 100) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

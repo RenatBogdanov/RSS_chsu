@@ -32,7 +32,21 @@ interface ArticleDao {
     @Query("DELETE FROM articles WHERE isBookmarked = 0 AND fetchedAt < :minFetchedAt")
     suspend fun deleteOlderThan(minFetchedAt: Long): Int
 
-    /** Лимит по количеству: оставляем [max] самых свежих не-закладок. Закладки не считаются. */
+    /** Лимит по количеству на конкретный источник: оставляем не более [max] самых свежих не-закладок. */
+    @Query(
+        """
+        DELETE FROM articles
+        WHERE isBookmarked = 0 AND sourceName = :sourceName AND id NOT IN (
+            SELECT id FROM articles
+            WHERE isBookmarked = 0 AND sourceName = :sourceName
+            ORDER BY publishedAt DESC, fetchedAt DESC
+            LIMIT :max
+        )
+        """
+    )
+    suspend fun deleteOverLimitForSource(sourceName: String, max: Int): Int
+
+    /** Общий лимит по количеству: оставляем [max] самых свежих не-закладок. Закладки не считаются. */
     @Query(
         """
         DELETE FROM articles
@@ -45,4 +59,10 @@ interface ArticleDao {
         """
     )
     suspend fun deleteOverLimit(max: Int): Int
+
+    @Query("DELETE FROM articles WHERE sourceName = :sourceDomain OR sourceName = :sourceName OR id LIKE '%' || :sourceDomain || '%' OR id LIKE '%' || :sourceName || '%'")
+    suspend fun deleteArticlesBySource(sourceDomain: String, sourceName: String)
+
+    @Query("DELETE FROM articles")
+    suspend fun deleteAll()
 }
