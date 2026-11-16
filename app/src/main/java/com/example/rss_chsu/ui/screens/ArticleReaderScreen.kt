@@ -225,14 +225,33 @@ fun ArticleReaderScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                // Article Body Content (Real Content)
-                Text(
-                    text = if (article.content.isNotEmpty()) article.content else article.title,
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Serif,
-                    color = TextPrimary,
-                    lineHeight = 26.sp
-                )
+                // Article Body Content (Real Content): абзацы отдельными блоками
+                val bodyText = article.content.trim()
+                if (bodyText.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        bodyText.split("\n\n").filter { it.isNotBlank() }.forEach { paragraph ->
+                            Text(
+                                text = paragraph.trim(),
+                                fontSize = 16.sp,
+                                fontFamily = FontFamily.Serif,
+                                color = TextPrimary,
+                                lineHeight = 26.sp
+                            )
+                        }
+                    }
+                }
+
+                // Лента отдала только анонс (или вообще не отдала текст): говорим об этом прямо,
+                // а не повторяем заголовок
+                if (bodyText.isEmpty() || bodyText.length <= article.subtitle.length + 20) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Этот источник не передаёт в ленте полный текст статьи. Прочитать её целиком можно на сайте.",
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                        lineHeight = 18.sp
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(28.dp))
 

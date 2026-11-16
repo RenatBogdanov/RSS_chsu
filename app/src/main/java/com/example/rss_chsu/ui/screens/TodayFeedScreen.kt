@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.lazy.LazyRow
 import coil.compose.AsyncImage
-import coil.compose.SubcomposeAsyncImage
+import com.example.rss_chsu.ui.components.LoadMoreEffect
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Article
@@ -33,9 +33,11 @@ import com.example.rss_chsu.ui.model.Folder
 import com.example.rss_chsu.ui.model.PopularSources
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
-import com.example.rss_chsu.ui.model.matchesArticle
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.launch
+
+/** Размер порции ленты: столько статей добавляется, когда пользователь доскроллил до конца. */
+private const val PAGE_SIZE = 30
 
 @Composable
 fun TodayFeedScreen(
@@ -64,8 +66,12 @@ fun TodayFeedScreen(
         listOf("Все (${articlesList.size})", "Для вас (${personalizedArticles.size})", "Новые ($unreadCount)")
     }
 
-    // Ограничиваем количество статей на главном экране во избежание OutOfMemory при тысячах элементов
-    val displayLimit by remember { mutableIntStateOf(500) }
+    // Показываем статьи порциями: сначала PAGE_SIZE, остальные подгружаются при прокрутке к концу списка.
+    // Фильтры, сортировка и счётчики работают по полному (облегчённому) списку, поэтому остаются точными.
+    var displayLimit by remember { mutableIntStateOf(PAGE_SIZE) }
+
+    // Источник статьи находим по явной связи sourceId, а не перебором с угадыванием по названиям
+    val sourceByDomain = remember(sourcesList) { sourcesList.associateBy { it.domain } }
 
     // 1. Сырой список для текущей вкладки
     val rawTabArticles = remember(selectedFilterIndex, articlesList, personalizedArticles, selectedFolders, selectedSources, sourcesList) {
@@ -74,13 +80,13 @@ fun TodayFeedScreen(
             2 -> articlesList.filter { !it.isFeatured && !it.isRead } // Новые (непрочитанные)
             else -> articlesList.filter { !it.isFeatured } // Все
         }
-        
+
         if (selectedFolders.isEmpty() && selectedSources.isEmpty()) {
             baseList
         } else {
             baseList.filter { article ->
                 // Находим источник статьи
-                val source = sourcesList.find { it.matchesArticle(article) }
+                val source = sourceByDomain[article.sourceId]
                 val matchesFolder = selectedFolders.isNotEmpty() && source?.folderName in selectedFolders
                 val matchesSource = selectedSources.isNotEmpty() && source?.name in selectedSources
                 matchesFolder || matchesSource
@@ -99,16 +105,25 @@ fun TodayFeedScreen(
         }
     }
 
-    // 3. Убираем главную статью из списка и применяем лимит
-    val filteredArticles = remember(rawTabArticles, featured, displayLimit) {
-        rawTabArticles.filter { it.id != featured?.id }.take(displayLimit)
+    // 3. Убираем главную статью из списка и применяем сортировку
+    val sortedAll = remember(rawTabArticles, featured, isAscendingSort, selectedFilterIndex) {
+        val withoutFeatured = rawTabArticles.filter { it.id != featured?.id }
+        // Если вкладка "Для вас", не переворачиваем (там сортировка по релевантности)
+        if (isAscendingSort && selectedFilterIndex != 1) withoutFeatured.reversed() else withoutFeatured
     }
 
-    // 4. Применяем сортировку 
-    val sortedArticles = remember(filteredArticles, isAscendingSort, selectedFilterIndex) {
-        // Если вкладка "Для вас", не переворачиваем (там сортировка по релевантности)
-        if (isAscendingSort && selectedFilterIndex != 1) filteredArticles.reversed() else filteredArticles
+    // 4. Порция для показа. Лимит применяется после сортировки: иначе при «сначала старые» показывались бы
+    // не самые старые статьи, а перевёрнутые самые новые
+    val sortedArticles = remember(sortedAll, displayLimit) { sortedAll.take(displayLimit) }
+    val hasMore = sortedAll.size > displayLimit
+
+    // При смене вкладки, сортировки или фильтров начинаем с первой порции
+    LaunchedEffect(selectedFilterIndex, isAscendingSort, selectedFolders, selectedSources) {
+        displayLimit = PAGE_SIZE
+        listState.scrollToItem(0)
     }
+
+    LoadMoreEffect(listState, enabled = hasMore) { displayLimit += PAGE_SIZE }
 
     Column(
         modifier = Modifier
@@ -198,9 +213,9 @@ fun TodayFeedScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = optionText, 
-                                        fontSize = 12.sp, 
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, 
+                                        text = optionText,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isSelected) TextPrimary else TextSecondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -223,7 +238,7 @@ fun TodayFeedScreen(
                 }
 
                 // Article List Items
-                items(sortedArticles, key = { it.id }) { article ->
+                items(sortedArticles, key = { it.id }, contentType = { "article" }) { article ->
                     FeedArticleRow(
                         article = article,
                         sourcesList = sourcesList,
@@ -231,8 +246,8 @@ fun TodayFeedScreen(
                     )
                 }
 
-                // Индикатор конца списка
-                item(key = "end_of_list_indicator") {
+                // Индикатор конца списка: только когда подгружать больше нечего
+                if (!hasMore) item(key = "end_of_list_indicator") {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -271,7 +286,7 @@ fun TodayFeedScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text("Настройки ленты", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    
+
                     // Сортировка по времени
                     Text("Сортировка по времени", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     Row(
@@ -320,8 +335,8 @@ fun TodayFeedScreen(
                                     }
                                 ) {
                                     Text(
-                                        text = folder.name, 
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), 
+                                        text = folder.name,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         color = if (isSelected) Color.White else TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
@@ -330,7 +345,7 @@ fun TodayFeedScreen(
                             }
                         }
                     }
-                    
+
                     // Фильтр по источникам
                     if (sourcesList.isNotEmpty()) {
                         Text("Показывать источники", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
@@ -345,8 +360,8 @@ fun TodayFeedScreen(
                                     }
                                 ) {
                                     Text(
-                                        text = source.name, 
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), 
+                                        text = source.name,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         color = if (isSelected) Color.White else TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
@@ -399,7 +414,7 @@ fun FilterChipPill(
 
 fun cleanSourceName(rawName: String, sourcesList: List<Source> = emptyList()): String {
     if (rawName.isBlank()) return "Источник"
-    
+
     val matched = sourcesList.find { it.name.equals(rawName, ignoreCase = true) || it.domain.equals(rawName, ignoreCase = true) }
         ?: PopularSources.topFeeds.find { it.name.equals(rawName, ignoreCase = true) || it.domain.equals(rawName, ignoreCase = true) }
     if (matched != null) {
@@ -451,42 +466,21 @@ fun FeaturedArticleCard(
                     .background(Color(0xFFA0A0A0)),
                 contentAlignment = Alignment.Center
             ) {
+                // Заглушка рисуется всегда, картинка ложится поверх. Так не нужна subcompose-версия
+                // загрузчика картинок, которая заметно тяжелее обычной в длинных списках
+                Icon(
+                    imageVector = RssIcons.Subscriptions,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(28.dp)
+                )
                 if (article.imageUrl.isNotEmpty()) {
-                    SubcomposeAsyncImage(
+                    AsyncImage(
                         model = article.imageUrl,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        error = {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color(0xFFA0A0A0)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = RssIcons.Subscriptions,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
+                        contentScale = ContentScale.Crop
                     )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFA0A0A0)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = RssIcons.Subscriptions,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
                 }
 
                 Box(
@@ -647,27 +641,19 @@ fun FeedArticleRow(
                         .background(Color(0xFFA0A0A0)),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Заглушка всегда снизу, картинка поверх (см. FeaturedArticleCard)
+                    Icon(
+                        imageVector = RssIcons.Subscriptions,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp)
+                    )
                     if (article.imageUrl.isNotEmpty()) {
-                        SubcomposeAsyncImage(
+                        AsyncImage(
                             model = article.imageUrl,
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            error = {
-                                Icon(
-                                    imageVector = RssIcons.Subscriptions,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        )
-                    } else {
-                        Icon(
-                            imageVector = RssIcons.Subscriptions,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp)
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }

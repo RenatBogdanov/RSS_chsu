@@ -4,6 +4,7 @@ import android.text.Html
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 
 object RssParser {
 
@@ -23,107 +24,184 @@ object RssParser {
         "September" to "сентября", "October" to "октября", "November" to "ноября", "December" to "декабря"
     )
 
-    // Кэшированные форматтеры дат на поток (избавляет от трат CPU на создание SimpleDateFormat в цикле)
-    private val dateFormatters = ThreadLocal.withInitial {
-        listOf(
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH),
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm Z", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH),
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
-            SimpleDateFormat("dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
-            SimpleDateFormat("dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
-        ).onEach { it.timeZone = TimeZone.getTimeZone("UTC") }
+    // ---------------------------------------------------------------------------------------------
+    // Разбор текста
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Html.fromHtml схлопывает переводы строк, поэтому на время декодирования сущностей
+     * переводы строк заменяются этим служебным символом.
+     */
+    private const val NL = "\uE000"
+
+    private val escapedHtmlRegex = Regex(
+        "&lt;/?(?:p|div|br|a|img|span|h[1-6]|ul|ol|li|blockquote|strong|b|em|i|figure|pre|code|table)\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val anyTagRegex = Regex("<[a-zA-Z/!][^>]*>")
+    private val scriptStyleRegex = Regex("(?is)<(?:script|style)[\\s\\S]*?</(?:script|style)>")
+    private val whitespaceWithNewline = Regex("\\s*\\n\\s*")
+    private val brRegex = Regex("(?i)<br\\s*/?>")
+    private val blockEndRegex = Regex("(?i)</(?:p|div|h[1-6]|blockquote|tr|ul|ol|figure|pre|table)>")
+    private val liEndRegex = Regex("(?i)</li>")
+    private val liStartRegex = Regex("(?i)<li[^>]*>")
+    private val anyTagStripRegex = Regex("<[^>]+>")
+    private val spacesAroundNewline = Regex("[ \\t]*\\n[ \\t]*")
+    private val manyNewlines = Regex("\\n{3,}")
+
+    /** Рекламные хвосты, которые издания дописывают в конец текста. */
+    private val promoSuffixes = listOf(
+        Regex("\\s*Оставайтесь на связи с РБК[^\\n]*$")
+    )
+
+    private fun stripCdata(s: String): String = s.replace("<![CDATA[", "").replace("]]>", "")
+
+    private fun unescapeXml(s: String): String =
+        s.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&amp;", "&")
+
+    /** Убирает CDATA и раскрывает HTML, экранированный целиком (Atom type="html"). */
+    private fun normalizeMarkup(raw: String): String {
+        val s = stripCdata(raw)
+        return if (escapedHtmlRegex.containsMatchIn(s)) unescapeXml(s) else s
     }
 
-    private val dayFormat = ThreadLocal.withInitial { SimpleDateFormat("EEE", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
-    private val dayNumFormat = ThreadLocal.withInitial { SimpleDateFormat("dd", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
-    private val monthFormat = ThreadLocal.withInitial { SimpleDateFormat("MMM", Locale.ENGLISH).apply { timeZone = TimeZone.getTimeZone("UTC") } }
+    private fun decodeEntities(s: String): String =
+        try {
+            Html.fromHtml(s, Html.FROM_HTML_MODE_LEGACY).toString()
+        } catch (_: Exception) {
+            s.replace("&laquo;", "«")
+                .replace("&raquo;", "»")
+                .replace("&quot;", "\"")
+                .replace("&nbsp;", " ")
+                .replace("&mdash;", "—")
+                .replace("&ndash;", "–")
+                .replace("&hellip;", "…")
+                .replace("&amp;", "&")
+        }
 
-    /** Очистка от мусорных спецсимволов, replacement character, BOM и управляющих кодов */
-    fun cleanGarbageText(input: String): String {
-        if (input.isEmpty()) return ""
-        var str = input
-            .replace("\uFFFC", "") // OBJECT REPLACEMENT CHARACTER
-            .replace("\uFFFD", "") // REPLACEMENT CHARACTER
-            .replace("\uFEFF", "") // ZERO WIDTH NO-BREAK SPACE / BOM
-            .replace("\u200B", "") // ZERO WIDTH SPACE
-            .replace("\u200C", "") // ZERO WIDTH NON-JOINER
-            .replace("\u200D", "") // ZERO WIDTH JOINER
-            .replace(Regex("[\u0000-\u0008\u000B\u000C\u000E-\u001F]"), "")
-            .replace(Regex(" {2,}"), " ")
+    /**
+     * Превращает HTML или обычный текст с сущностями в чистый текст, сохраняя абзацы:
+     * абзацы разделены пустой строкой, внутри абзаца переводы строк одинарные.
+     */
+    private fun markupToText(raw: String): String {
+        if (raw.isBlank()) return ""
+        var s = normalizeMarkup(raw)
+
+        s = if (anyTagRegex.containsMatchIn(s)) {
+            s.replace(scriptStyleRegex, "")
+                .replace(whitespaceWithNewline, " ")      // в HTML перевод строки — это просто пробел
+                .replace(brRegex, NL)
+                .replace(blockEndRegex, "$NL$NL")
+                .replace(liEndRegex, NL)
+                .replace(liStartRegex, "• ")
+                .replace(anyTagStripRegex, "")
+        } else {
+            // обычный текст (например, rbc_news:full-text): переводы строк значимы
+            s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", NL)
+        }
+
+        s = decodeEntities(s)
+            .replace("\u00A0", " ")
+            .replace(NL, "\n")
+            .replace(spacesAroundNewline, "\n")
+            .replace(manyNewlines, "\n\n")
             .trim()
-        
-        str = str.replace(Regex("(?i)\\[OBJ\\]"), "")
-            .replace(Regex("(?i)\\(OBJ\\)"), "")
-            .trim()
-            
-        return str
+
+        for (promo in promoSuffixes) s = s.replace(promo, "")
+        return s.trim()
     }
 
-    /** Очистка HTML-сущностей с быстрой оптимизацией для обычного текста. */
+    private fun flatten(text: String): String = text.replace(Regex("\\s+"), " ").trim()
+
+    private fun clip(text: String, max: Int): String {
+        if (text.length <= max) return text
+        val cut = text.take(max)
+        val atWord = cut.substringBeforeLast(' ', cut)
+        return atWord.trimEnd(',', ';', ':', '-', '—', ' ') + "…"
+    }
+
     private fun cleanHtmlEntities(input: String): String {
         if (input.isEmpty()) return ""
-        var str = input.trim()
+        return decodeEntities(input).trim()
+    }
 
-        str = str.replace("&laquo;", "«")
-            .replace("&raquo;", "»")
-            .replace("&quot;", "\"")
-            .replace("&nbsp;", " ")
-            .replace("&mdash;", "—")
-            .replace("&ndash;", "–")
-            .replace("&hellip;", "…")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&#39;", "'")
-            .replace("&apos;", "'")
+    // ---------------------------------------------------------------------------------------------
+    // Поиск тегов
+    // ---------------------------------------------------------------------------------------------
 
-        val htmlCleaned = if (str.contains('<') || str.contains('&')) {
-            try {
-                Html.fromHtml(str, Html.FROM_HTML_MODE_LEGACY).toString()
-            } catch (_: Exception) {
-                str.replace(Regex("<.*?>"), "")
+    private val tagRegexCache = ConcurrentHashMap<String, Regex>()
+
+    /**
+     * Содержимое первого непустого тега из списка имён (в порядке приоритета).
+     * Имя указывается с префиксом, например "rbc_news:full-text", поэтому "title" не совпадёт с "rbc_news:title".
+     */
+    private fun tag(block: String, vararg names: String): String? {
+        for (name in names) {
+            val regex = tagRegexCache.getOrPut(name) {
+                val n = Regex.escape(name)
+                Regex("<$n(?:\\s[^>]*)?>([\\s\\S]*?)</$n\\s*>", RegexOption.IGNORE_CASE)
             }
-        } else {
-            str
+            val value = regex.find(block)?.groupValues?.get(1)?.let { stripCdata(it).trim() }
+            if (!value.isNullOrEmpty()) return value
         }
-
-        return cleanGarbageText(htmlCleaned)
+        return null
     }
 
-    private fun formatFeedTitle(title: String): String {
-        var clean = title.trim()
-        // Убираем длинные SEO-хвосты, отрезая по популярным разделителям
-        val separators = listOf(" - ", " — ", " | ", ": ")
-        for (sep in separators) {
-            if (clean.contains(sep)) {
-                val parts = clean.split(sep)
-                if (parts[0].isNotEmpty() && parts[0].length < 30) {
-                    clean = parts[0]
-                    break
-                }
-            }
-        }
-        if (clean.length > 35) {
-            clean = clean.take(35) + "..."
-        }
-        return clean.trim()
+    private val linkTagRegex = Regex("<link\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val hrefRegex = Regex("""href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    private val relRegex = Regex("""rel=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+
+    private fun pickLink(block: String): String? {
+        tag(block, "link")?.let { return it }
+        // Atom: <link href="..." rel="alternate"/>
+        val links = linkTagRegex.findAll(block).map { it.value }.toList()
+        val preferred = links.firstOrNull {
+            val rel = relRegex.find(it)?.groupValues?.get(1)
+            rel == null || rel.equals("alternate", ignoreCase = true)
+        } ?: links.firstOrNull()
+        return preferred?.let { hrefRegex.find(it)?.groupValues?.get(1)?.trim() }
     }
 
-    private fun formatFeedDescription(desc: String): String {
-        var clean = desc.trim().replace(Regex("\\s+"), " ")
-        if (clean.length > 120) {
-            clean = clean.take(120) + "..."
+    private val enclosureTagRegex = Regex("<enclosure\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val urlAttrRegex = Regex("""url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    private val typeAttrRegex = Regex("""type=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    private val imageExtRegex = Regex("""\.(?:jpe?g|png|gif|webp|avif)(?:\?.*)?$""", RegexOption.IGNORE_CASE)
+    private val mediaRegex = Regex("""<media:(?:content|thumbnail)[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    private val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+
+    /** Картинка статьи: сначала enclosure типа image (видео пропускаем), затем media:*, затем <img> в тексте. */
+    private fun pickImage(block: String, markups: List<String>): String? {
+        for (m in enclosureTagRegex.findAll(block)) {
+            val t = m.value
+            val url = urlAttrRegex.find(t)?.groupValues?.get(1) ?: continue
+            val type = typeAttrRegex.find(t)?.groupValues?.get(1)
+            val isImage = type?.startsWith("image", ignoreCase = true) ?: imageExtRegex.containsMatchIn(url)
+            if (isImage) return url.replace("&amp;", "&")
         }
-        return clean
+        mediaRegex.find(block)?.groupValues?.get(1)?.let { return it.replace("&amp;", "&") }
+        for (markup in markups) {
+            imgRegex.find(normalizeMarkup(markup))?.groupValues?.get(1)?.let { return it }
+        }
+        return null
     }
 
-    fun parseRss(xmlContent: String, sourceNameDefault: String = "RSS Feed", maxItemsToParse: Int = 500, skipItems: Int = 0): Pair<Source, List<Article>> {
+    private val relatedLinksRegex = Regex("<rbc_news:related_links>[\\s\\S]*?</rbc_news:related_links>", RegexOption.IGNORE_CASE)
+    private val categoryTermRegex = Regex("""<category[^>]+term=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+
+    // ---------------------------------------------------------------------------------------------
+    // Разбор ленты
+    // ---------------------------------------------------------------------------------------------
+
+    fun parseRss(
+        xmlContent: String,
+        sourceNameDefault: String = "RSS Feed",
+        maxItemsToParse: Int = Int.MAX_VALUE,
+        skipItems: Int = 0
+    ): Pair<Source, List<Article>> {
         val articles = mutableListOf<Article>()
 
         // 1. Extract feed title
@@ -131,94 +209,103 @@ object RssParser {
         val rawFeedTitle = titleMatch?.groupValues?.get(1)
             ?.replace("<![CDATA[", "")?.replace("]]>", "")
             ?.replace(Regex("<.*?>"), "")?.trim() ?: sourceNameDefault
-        val feedTitle = formatFeedTitle(cleanHtmlEntities(rawFeedTitle))
+        val feedTitle = cleanHtmlEntities(rawFeedTitle)
 
         // 2. Extract feed description
         val descMatch = Regex("""<(?:channel|feed)[^>]*>[\s\S]*?<(?:description|subtitle)[^>]*>([\s\S]*?)</(?:description|subtitle)>""", RegexOption.IGNORE_CASE).find(xmlContent)
-        val feedDescription = formatFeedDescription(cleanHtmlEntities(descMatch?.groupValues?.get(1)?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim() ?: ""))
+        val feedDescription = cleanHtmlEntities(descMatch?.groupValues?.get(1)?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim() ?: "")
 
         // 3. Extract items / entries
         val itemRegex = Regex("""<(?:item|entry)[\s\S]*?>([\s\S]*?)</(?:item|entry)>""", RegexOption.IGNORE_CASE)
-        val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-        val enclosureRegex = Regex("""<enclosure[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-        val mediaRegex = Regex("""<media:(?:content|thumbnail)[^>]+url=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-        val matches = itemRegex.findAll(xmlContent).drop(skipItems).take(maxItemsToParse)
-        val currentTimeMillis = System.currentTimeMillis()
+        var itemIndex = 0
+        val skipCount = skipItems.coerceAtLeast(0)
+        val itemLimit = maxItemsToParse.coerceAtLeast(0)
 
-        for (match in matches) {
-            val block = match.groupValues[1]
+        for (match in itemRegex.findAll(xmlContent)) {
+            // skipItems считает исходные блоки item/entry, а maxItemsToParse — успешно разобранные статьи.
+            if (itemIndex < skipCount) {
+                itemIndex++
+                continue
+            }
+            if (articles.size >= itemLimit) break
+            itemIndex++
 
-            val itemTitle = Regex("""<title[^>]*>([\s\S]*?)</title>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
+            // «Связанные материалы» РБК содержат вложенные title/link/description — к самой статье они не относятся
+            val block = match.groupValues[1].replace(relatedLinksRegex, "")
 
-            val itemLink = Regex("""<link[^>]*>([\s\S]*?)</link>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
-                ?: Regex("""<link[^>]+href=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)?.trim()
+            val itemTitle = tag(block, "title") ?: continue
+            val itemLink = pickLink(block)
 
-            val itemDesc = Regex("""<description[^>]*>([\s\S]*?)</description>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
+            // Полный текст бывает в разных тегах: rbc_news:full-text, yandex:full-text, turbo:content,
+            // content:encoded, Atom <content>. Короткий анонс — в description или Atom <summary>.
+            val rawFull = tag(block, "rbc_news:full-text", "yandex:full-text", "turbo:content", "content:encoded", "content")
+            val rawSummary = tag(block, "description", "summary")
 
-            val itemEncoded = Regex("""<content:encoded[^>]*>([\s\S]*?)</content:encoded>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
-                ?: Regex("""<content[^>]*>([\s\S]*?)</content>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                    ?.replace("<![CDATA[", "")?.replace("]]>", "")?.trim()
+            val fullText = rawFull?.let { markupToText(it) }.orEmpty()
+            val summaryText = rawSummary?.let { markupToText(it) }.orEmpty()
+            // Берём самый полный из вариантов. Если текста нет вообще, остаётся пустая строка
+            // (раньше сюда подставлялся заголовок, и читалка показывала его дважды).
+            val cleanContent = if (fullText.length >= summaryText.length) fullText else summaryText
 
-            val bestHtml = if ((itemEncoded?.length ?: 0) > (itemDesc?.length ?: 0)) itemEncoded!! else (itemDesc ?: itemTitle ?: "")
+            val itemPubDate = tag(block, "pubDate", "published", "dc:date", "updated")
+            val itemAuthor = tag(block, "dc:creator", "author")?.replace(Regex("<.*?>"), "")?.trim()
 
-            val itemPubDate = Regex("""<(?:pubDate|updated|dc:date)[^>]*>(.*?)</(?:pubDate|updated|dc:date)>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)?.trim()
-            val itemAuthor = Regex("""<(?:dc:creator|author)[^>]*>([\s\S]*?)</(?:dc:creator|author)>""", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1)
-                ?.replace("<![CDATA[", "")?.replace("]]>", "")?.replace(Regex("<.*?>"), "")?.trim()
+            val category = tag(block, "category")?.let { cleanHtmlEntities(it.replace(Regex("<.*?>"), "")) }?.takeIf { it.isNotBlank() }
+                ?: categoryTermRegex.find(block)?.groupValues?.get(1)?.let { cleanHtmlEntities(it) }
+                ?: "Лента"
 
-            val imgUrl = enclosureRegex.find(block)?.groupValues?.get(1)
-                ?: mediaRegex.find(block)?.groupValues?.get(1)
-                ?: imgRegex.find(bestHtml)?.groupValues?.get(1)
-                ?: imgRegex.find(itemDesc ?: "")?.groupValues?.get(1)
+            val imgUrl = pickImage(block, listOfNotNull(rawFull, rawSummary))
 
-            if (!itemTitle.isNullOrEmpty()) {
-                val cleanTitle = cleanHtmlEntities(itemTitle.replace(Regex("<.*?>"), ""))
+            val cleanTitle = cleanHtmlEntities(itemTitle.replace(Regex("<.*?>"), ""))
+            if (cleanTitle.isEmpty()) continue
 
-                val cleanContent = cleanHtmlEntities(
-                    bestHtml
-                        .replace(Regex("(?i)<br\\s*/?>"), "\n")
-                        .replace(Regex("(?i)</p>"), "\n\n")
-                        .replace(Regex("<.*?>"), "")
-                )
+            val subtitleSource = flatten(summaryText).ifEmpty { flatten(cleanContent) }
+            val wordCount = (if (cleanContent.isNotEmpty()) cleanContent else subtitleSource)
+                .split(Regex("\\s+")).count { it.isNotEmpty() }
+            val readMins = (wordCount / 160).coerceAtLeast(1)
 
-                val cleanSubtitle = cleanHtmlEntities(
-                    (itemDesc ?: "").replace(Regex("<.*?>"), "")
-                )
+            val relativeTime = parseRssDateToRelative(itemPubDate)
+            val russianDate = parseRssDateToRussian(itemPubDate)
 
-                val wordCount = cleanContent.split("\\s+".toRegex()).size
-                val readMins = (wordCount / 160).coerceAtLeast(1)
-                val relativeTime = parseRssDateToRelative(itemPubDate)
-                val russianDate = parseRssDateToRussian(itemPubDate)
-                val parsedMillis = parseDateToMillis(itemPubDate)
-                val publishedAtFinal = if (parsedMillis == 0L) currentTimeMillis - articles.size else parsedMillis
-
-                val article = Article(
-                    id = itemLink ?: (currentTimeMillis.toString() + "_" + articles.size),
+            articles.add(
+                Article(
+                    id = itemLink ?: tag(block, "guid", "id") ?: (System.currentTimeMillis().toString() + "_" + articles.size),
                     title = cleanTitle,
-                    subtitle = if (cleanSubtitle.isNotEmpty()) cleanSubtitle.take(150) else cleanContent.take(150),
-                    content = if (cleanContent.isNotEmpty()) cleanContent else cleanTitle,
+                    subtitle = clip(subtitleSource, 300),
+                    content = cleanContent,
                     sourceName = feedTitle,
-                    category = "Лента",
+                    category = category,
                     author = cleanHtmlEntities(itemAuthor ?: ""),
                     date = relativeTime,
                     pubDateFormatted = russianDate,
-                    publishedAt = publishedAtFinal,
+                    publishedAt = parseDateToMillis(itemPubDate),
                     readTime = "$readMins мин чтения",
                     imageUrl = imgUrl ?: "",
                     isFeatured = articles.isEmpty(),
                     isBookmarked = false,
                     isRead = false
                 )
-                articles.add(article)
-            }
+            )
         }
 
-        // Fallback-статьи больше не добавляем, чтобы не засорять базу мусорным XML кодом.
-        // Репозиторий теперь сам проверяет наличие валидных статей.
+        // Не создаём служебную fallback-статью при фоновой догрузке второй части ленты.
+        if (articles.isEmpty() && xmlContent.isNotEmpty() && skipCount == 0 && itemLimit > 0) {
+            articles.add(
+                Article(
+                    id = "fallback_${System.currentTimeMillis()}",
+                    title = "Лента: $feedTitle",
+                    subtitle = "Материалы получены из RSS потока.",
+                    content = xmlContent.take(1000),
+                    sourceName = feedTitle,
+                    category = "RSS",
+                    date = "только что",
+                    pubDateFormatted = "Сегодня",
+                    readTime = "1 мин чтения",
+                    isFeatured = true
+                )
+            )
+        }
 
         val source = Source(
             id = feedTitle.hashCode().toString(),
@@ -234,12 +321,24 @@ object RssParser {
         return Pair(source, articles)
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Даты
+    // ---------------------------------------------------------------------------------------------
+
     fun parseDateToMillis(dateStr: String?): Long {
         if (dateStr.isNullOrEmpty()) return 0L
 
-        val formats = dateFormatters.get()!!
+        val formats = listOf(
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
+        )
+
         for (format in formats) {
             try {
+                format.timeZone = TimeZone.getTimeZone("UTC")
                 val date = format.parse(dateStr.trim())
                 if (date != null) return date.time
             } catch (_: Exception) {}
@@ -261,8 +360,8 @@ object RssParser {
             minutes < 1 -> "только что"
             minutes < 60 -> "${minutes}м"
             hours < 24 -> "${hours}ч"
-            days < 31 -> "${days}д"
-            months < 12 -> "${months.coerceAtLeast(1)}мес"
+            days < 7 -> "${days}д"
+            months < 12 -> "${months}мес"
             else -> "${years}г"
         }
     }
@@ -276,10 +375,18 @@ object RssParser {
     private fun parseRssDateToRussian(dateStr: String?): String {
         if (dateStr.isNullOrEmpty()) return "Сегодня"
 
-        val formats = dateFormatters.get()!!
+        val formats = listOf(
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH),
+            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH)
+        )
+
         var dateObj: java.util.Date? = null
         for (format in formats) {
             try {
+                format.timeZone = TimeZone.getTimeZone("UTC")
                 dateObj = format.parse(dateStr.trim())
                 if (dateObj != null) break
             } catch (_: Exception) {}
@@ -287,9 +394,13 @@ object RssParser {
 
         if (dateObj == null) return dateStr
 
-        val engDay = dayFormat.get()!!.format(dateObj)
-        val dayNum = dayNumFormat.get()!!.format(dateObj)
-        val engMonth = monthFormat.get()!!.format(dateObj)
+        val dayFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
+        val dayNumFormat = SimpleDateFormat("dd", Locale.ENGLISH)
+        val monthFormat = SimpleDateFormat("MMM", Locale.ENGLISH)
+
+        val engDay = dayFormat.format(dateObj)
+        val dayNum = dayNumFormat.format(dateObj)
+        val engMonth = monthFormat.format(dateObj)
 
         val rusDay = russianDays[engDay] ?: engDay
         val rusMonth = russianMonths[engMonth] ?: engMonth

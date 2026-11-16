@@ -10,6 +10,8 @@ import com.example.rss_chsu.ui.components.NavTab
 import com.example.rss_chsu.ui.components.RSSBottomBar
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
+import com.example.rss_chsu.ui.model.RssRepository
+import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -20,10 +22,18 @@ fun MainScreen(
     var selectedArticle by remember { mutableStateOf<Article?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
-    val articles by feedViewModel.articles.collectAsState()
+    // Полный текст читаем отдельно и только для открытой статьи: в списках он обрезан.
+    // Этот же поток обновляется при смене закладки и статуса «прочитано».
+    // Подписки на весь список статей здесь больше нет, поэтому MainScreen не перерисовывается при каждом его изменении.
+    val articleFlow = remember(selectedArticle?.id) {
+        val id = selectedArticle?.id
+        if (id == null) flowOf<Article?>(null) else RssRepository.observeArticle(id)
+    }
+    val loadedArticle by articleFlow.collectAsState(initial = selectedArticle)
 
+    // loadedArticle может на мгновение остаться от предыдущей статьи, поэтому сверяем id
     val openedArticle = selectedArticle?.let { selected ->
-        articles.firstOrNull { it.id == selected.id } ?: selected
+        loadedArticle?.takeIf { it.id == selected.id } ?: selected
     }
 
     LaunchedEffect(selectedArticle?.id) {
