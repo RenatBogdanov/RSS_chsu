@@ -65,6 +65,10 @@ object RssRepository {
     private val _articles = MutableStateFlow<List<Article>>(emptyList())
     val articles: StateFlow<List<Article>> = _articles.asStateFlow()
 
+    /** Объём данных статей, сохранённых в локальном кэше (в байтах). */
+    private val _cacheSizeBytes = MutableStateFlow(0L)
+    val cacheSizeBytes: StateFlow<Long> = _cacheSizeBytes.asStateFlow()
+
     private val _sources = MutableStateFlow<List<Source>>(emptyList())
     val sources: StateFlow<List<Source>> = _sources.asStateFlow()
 
@@ -96,6 +100,12 @@ object RssRepository {
                 }
                 .flowOn(Dispatchers.Default)
                 .collect { _articles.value = it }
+        }
+
+        // Размер кэша пересчитывается Room автоматически при изменении таблицы articles.
+        scope.launch {
+            dao.observeCacheSizeBytes()
+                .collect { _cacheSizeBytes.value = it }
         }
 
         // Источники и папки со счётчиками. Счётчики приходят из БД (GROUP BY sourceId),

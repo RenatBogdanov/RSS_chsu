@@ -97,4 +97,32 @@ interface ArticleDao {
 
     @Query("DELETE FROM articles")
     suspend fun deleteAll(): Int
+
+    /**
+     * Приблизительный объём данных статей в байтах.
+     * CAST(... AS BLOB) считает байты текста, а не количество символов.
+     */
+    @Query(
+        """
+        SELECT COALESCE(
+            SUM(
+                LENGTH(CAST(id AS BLOB)) +
+                LENGTH(CAST(title AS BLOB)) +
+                LENGTH(CAST(subtitle AS BLOB)) +
+                LENGTH(CAST(content AS BLOB)) +
+                LENGTH(CAST(sourceName AS BLOB)) +
+                LENGTH(CAST(category AS BLOB)) +
+                LENGTH(CAST(author AS BLOB)) +
+                LENGTH(CAST(pubDateFormatted AS BLOB)) +
+                LENGTH(CAST(readTime AS BLOB)) +
+                LENGTH(CAST(imageUrl AS BLOB)) +
+                LENGTH(CAST(keywords AS BLOB)) +
+                LENGTH(CAST(sourceId AS BLOB))
+            ),
+            0
+        )
+        FROM articles
+        """
+    )
+    fun observeCacheSizeBytes(): Flow<Long>
 }
