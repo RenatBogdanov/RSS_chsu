@@ -19,6 +19,7 @@ kotlinxSerialization = "1.6.3"
 room = "2.8.4"
 # KSP: версия должна соответствовать Kotlin, встроенному в AGP 9 (2.2.10)
 ksp = "2.2.10-2.0.2"
+paging = "3.5.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,12 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+# Paging 3
+androidx-paging-runtime = { module = "androidx.paging:paging-runtime", version.ref = "paging" }
+androidx-paging-compose = { module = "androidx.paging:paging-compose", version.ref = "paging" }
+
+# Room + Paging
+androidx-room-paging = { module = "androidx.room:room-paging", version.ref = "room" }
 
 # Библиотеки Ktor и сериализации:
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
