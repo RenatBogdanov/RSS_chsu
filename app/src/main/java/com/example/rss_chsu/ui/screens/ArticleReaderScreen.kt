@@ -15,12 +15,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -52,10 +54,12 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -74,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -89,6 +94,18 @@ fun ArticleReaderScreen(
         LaunchedEffect(Unit) { onClose() }
         return
     }
+
+    // Состояние для свайпа вниз
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val animatedDragOffset by animateFloatAsState(
+        targetValue = dragOffsetY,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f),
+        label = "dragOffset"
+    )
+
+    val dismissThreshold = 150.dp
+    val density = LocalDensity.current.density
+    val dismissThresholdPx = dismissThreshold.value * density
 
     val initialPage = remember(articles, initialArticleId) {
         val idx = articles.indexOfFirst { it.id == initialArticleId }
@@ -121,8 +138,6 @@ fun ArticleReaderScreen(
         onReadArticle(currentArticle.id)
     }
 
-    // Сведения о статье — состояние на уровне экрана, чтобы кнопка (i) в шапке
-    // управляла блоком в контенте. Сбрасывается при смене статьи.
     var showDetails by remember(currentArticle.id) { mutableStateOf(false) }
 
     val canGoPrevious = pagerState.currentPage > 0
@@ -131,16 +146,65 @@ fun ArticleReaderScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // Модификатор для обработки свайпа вниз
+    val swipeDownModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragEnd = {
+                if (dragOffsetY > dismissThresholdPx) {
+                    onClose()
+                } else {
+                    dragOffsetY = 0f
+                }
+            },
+            onDragCancel = {
+                dragOffsetY = 0f
+            },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                if (dragAmount > 0) { // Тянем только вниз
+                    dragOffsetY += dragAmount
+                } else if (dragOffsetY > 0) { // Позволяем вернуть обратно, но не выше нуля
+                    dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .offset { IntOffset(0, animatedDragOffset.roundToInt()) }
+            .graphicsLayer {
+                // Эффект "сжатия" и прозрачности при свайпе (как на iOS)
+                val progress = (animatedDragOffset / dismissThresholdPx).coerceIn(0f, 1f)
+                scaleX = 1f - (progress * 0.05f)
+                scaleY = 1f - (progress * 0.05f)
+                alpha = 1f - (progress * 0.5f)
+            }
             .background(MaterialTheme.colorScheme.background)
     ) {
+        // 1. Визуальный маркер для свайпа (серая полоска)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp)
+                .then(swipeDownModifier), // Привязываем жест к полоске
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(TextSecondary.copy(alpha = 0.3f))
+            )
+        }
+
         // Верхняя навигационная панель
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
+                .then(swipeDownModifier) // Привязываем жест к шапке
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -262,7 +326,7 @@ fun ArticleReaderScreen(
                         )
                     }
 
-                    // Поделиться — рабочая
+                    // Поделиться
                     IconButton(
                         onClick = {
                             val shareText = buildString {
@@ -318,6 +382,12 @@ fun ArticleReaderScreen(
         }
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Остальные компоненты (ArticlePage, ArticleSkeleton, ShimmerBlock,
+// ArticleContent, FullScreenImageViewer, DownloadIcon, saveImageToGallery)
+// остаются БЕЗ ИЗМЕНЕНИЙ. Скопируйте их из вашего текущего файла.
+// ──────────────────────────────────────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────────
 // Одна «страница» пейджера: сначала скелетон, потом плавный кроссфейд в контент
