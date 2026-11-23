@@ -60,15 +60,12 @@ fun SearchSourcesScreen(
     val recommended by sourcesViewModel.recommendedSources.collectAsState()
     val subscribing by sourcesViewModel.subscribing.collectAsState()
 
-    // Пробная загрузка лент каталога, чтобы оценить, какие из них подходят пользователю
-    // (не чаще раза в несколько часов, лент за раз ограниченное число)
     LaunchedEffect(Unit) { sourcesViewModel.loadPreviews() }
 
     val folderNames = remember(realFolders) {
         listOf("Все") + realFolders.map { it.name }
     }
 
-    // Объединяем подписки пользователя и каталог популярных источников
     val allSearchableSources = remember(realSources) {
         val catalog = PopularSources.topFeeds.map { catalogSource ->
             val userSource = realSources.find { userSrc ->
@@ -77,7 +74,6 @@ fun SearchSourcesScreen(
                                 extractDomainKeywords(userSrc.domain) == extractDomainKeywords(catalogSource.domain))
             }
             if (userSource != null) {
-                // Если мы уже подписаны, берём данные из реальных подписок, НО СОХРАНЯЕМ аккуратное имя из каталога
                 userSource.copy(
                     name = catalogSource.name,
                     description = if (catalogSource.description.isNotBlank()) catalogSource.description else userSource.description,
@@ -99,11 +95,8 @@ fun SearchSourcesScreen(
 
     val selectedFolderName = if (selectedTagIndex in folderNames.indices) folderNames[selectedTagIndex] else "Все"
     val isSearching = searchQuery.isNotBlank()
-
-    // Обзор по категориям показываем, только когда пользователь не ищет и не открыл папку
     val showDiscovery = !isSearching && selectedFolderName == "Все"
 
-    // Плоский список: результаты поиска или содержимое выбранной папки
     val filteredSources = remember(searchQuery, selectedFolderName, allSearchableSources) {
         allSearchableSources.filter { source ->
             val matchesSearch = searchQuery.isBlank() ||
@@ -117,19 +110,35 @@ fun SearchSourcesScreen(
         }
     }
 
-    // Источники по категориям (ключ null: добавлены по ссылке, в каталоге их нет)
     val categorized = remember(allSearchableSources) {
         allSearchableSources.groupBy { SourceCategories.of(it) }
     }
 
+    val activeCategories = remember(categorized) {
+        SourceCategories.inOrder.filter { !categorized[it].isNullOrEmpty() }
+    }
+
     val onSubscribe: (Source) -> Unit = { sourcesViewModel.subscribe(it) }
 
-    // Позиция строки с чипами категорий в списке: нужна, чтобы после выбора категории показать её сверху
-    val chipsIndex = (if (realFolders.isNotEmpty()) 1 else 0) +
-            (if (recommended.isNotEmpty()) 1 + recommended.size else 0)
+    // Индекс блока выбранной категории (или начала разделов при "Все категории")
+    val targetSectionIndex = remember(realFolders.isNotEmpty(), recommended.isNotEmpty(), activeCategories, selectedCategory) {
+        val folderOffset = if (realFolders.isNotEmpty()) 1 else 0
+        val chipsOffset = 1
+        val recOffset = if (recommended.isNotEmpty()) 2 else 0 // заголовок + горизонтальная карусель
+        val baseOffset = folderOffset + chipsOffset + recOffset
+
+        if (selectedCategory == null) {
+            baseOffset
+        } else {
+            // При выбранной категории рендерится один заголовок + список источников
+            baseOffset
+        }
+    }
 
     LaunchedEffect(scrollRequest) {
-        if (scrollRequest > 0) listState.scrollToItem(chipsIndex)
+        if (scrollRequest > 0) {
+            listState.animateScrollToItem(targetSectionIndex.coerceAtLeast(0))
+        }
     }
 
     Column(
@@ -137,7 +146,6 @@ fun SearchSourcesScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Шапка в газетном стиле как в "Новости", включающая строку поиска
         TopAppLogoBar(
             content = {
                 Row(
@@ -227,7 +235,6 @@ fun SearchSourcesScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // User Folder Chips Filter Row (Show only if user has folders)
             if (realFolders.isNotEmpty()) {
                 item(key = "folder_chips") {
                     LazyRow(
@@ -248,26 +255,11 @@ fun SearchSourcesScreen(
             }
 
             if (showDiscovery) {
-                // 1. Рекомендации: по закладкам, прочитанному, подпискам и категориям
-                if (recommended.isNotEmpty()) {
-                    item(key = "rec_header") {
-                        SectionHeader(title = "Рекомендуем вам")
-                    }
-                    items(recommended, key = { "rec|" + it.source.domain + "|" + it.source.name }) { rec ->
-                        SourceRow(
-                            source = rec.source,
-                            hint = recommendationHint(rec),
-                            subscribing = subscribing,
-                            onSubscribe = onSubscribe
-                        )
-                    }
-                }
-
-                // 2. Чипы категорий
+                // 1. Быстрая навигация по категориям сразу вверху каталога
                 item(key = "category_chips") {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         item {
@@ -280,7 +272,7 @@ fun SearchSourcesScreen(
                                 }
                             )
                         }
-                        items(SourceCategories.inOrder.filter { !categorized[it].isNullOrEmpty() }) { category ->
+                        items(activeCategories, key = { "chip_${it.name}" }) { category ->
                             FilterChipPill(
                                 text = category.title,
                                 isSelected = selectedCategory == category,
@@ -293,12 +285,39 @@ fun SearchSourcesScreen(
                     }
                 }
 
-                // 3. Источники: все категории разделами или одна выбранная целиком
+                // 2. Компактная горизонтальная лента рекомендаций (не занимает пол-экрана по вертикали)
+                if (recommended.isNotEmpty()) {
+                    item(key = "rec_header") {
+                        SectionHeader(
+                            title = "Рекомендуем вам",
+                            trailing = "${recommended.size}"
+                        )
+                    }
+                    item(key = "rec_carousel") {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(
+                                recommended,
+                                key = { "rec|${it.source.domain}|${it.source.name}" }
+                            ) { rec ->
+                                RecommendedSourceCard(
+                                    rec = rec,
+                                    isLoading = rec.source.domain in subscribing,
+                                    onSubscribe = { onSubscribe(rec.source) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 3. Каталог по разделам или выбранная категория целиком
                 val category = selectedCategory
                 if (category == null) {
-                    SourceCategories.inOrder.forEach { section ->
+                    activeCategories.forEach { section ->
                         val list = categorized[section].orEmpty()
-                        if (list.isEmpty()) return@forEach
 
                         item(key = "sec_${section.name}") {
                             SectionHeader(title = section.title, trailing = "${list.size}")
@@ -341,7 +360,6 @@ fun SearchSourcesScreen(
                     }
                 }
             } else {
-                // Поиск или содержимое папки: плоский список, как раньше
                 item(key = "flat_header") {
                     SectionHeader(
                         title = if (isSearching) "Результаты поиска" else selectedFolderName,
@@ -376,7 +394,115 @@ fun SearchSourcesScreen(
     }
 }
 
-/** Почему источник рекомендован: категория и причина. */
+@Composable
+private fun RecommendedSourceCard(
+    rec: RecommendedSource,
+    isLoading: Boolean,
+    onSubscribe: () -> Unit
+) {
+    val source = rec.source
+    val isAdded = source.isSubscribed || source.folderName != null
+
+    Surface(
+        modifier = Modifier.width(248.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, ChipUnselected)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(ChipUnselected),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = source.logoText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = source.name,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = source.domain,
+                            fontSize = 11.sp,
+                            color = DarkPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(if (isAdded) ChipUnselected else DarkPrimary)
+                        .clickable(enabled = !isAdded && !isLoading, onClick = onSubscribe),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isAdded) Icons.Default.Check else Icons.Default.Add,
+                            contentDescription = if (isAdded) "В подписках" else "Добавить",
+                            tint = if (isAdded) TextPrimary else Color.White,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = source.description.ifBlank { recommendationHint(rec) },
+                fontSize = 12.sp,
+                color = TextSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 16.sp
+            )
+
+            Text(
+                text = recommendationHint(rec),
+                fontSize = 11.sp,
+                color = DarkPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 private fun recommendationHint(rec: RecommendedSource): String {
     val reason = when {
         rec.basedOnInterests && rec.score > 0.0 -> "Подходит под ваши интересы"
@@ -426,7 +552,6 @@ private fun ShowAllRow(count: Int, onClick: () -> Unit) {
     )
 }
 
-/** Строка источника. Подписка идёт через ViewModel, поэтому индикатор сбрасывается и при ошибке. */
 @Composable
 private fun SourceRow(
     source: Source,
@@ -449,7 +574,6 @@ fun SourceSearchResultRow(
     source: Source,
     onToggleSubscribe: () -> Unit,
     hint: String? = null,
-    // Если передан, индикатор загрузки управляется снаружи; иначе, как раньше, включается по нажатию
     isLoading: Boolean? = null
 ) {
     var isAdding by remember { mutableStateOf(false) }
