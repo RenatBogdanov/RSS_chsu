@@ -30,15 +30,13 @@ object ArticlePagingRepository {
     fun observeArticleCounts(): Flow<ArticleCounts> = dao().observeArticleCounts()
 
     /**
-     * Room returns a lightweight projection. Relative-date formatting and model mapping
-     * are performed on Dispatchers.Default, never from a LazyColumn item composable.
+     * Маппинг всей страницы целиком на Dispatchers.Default.
+     * Один контекст-свитч на страницу вместо N переключений на каждый элемент.
      */
     private fun Flow<PagingData<ArticleListItem>>.mapToArticlesOnDefault(): Flow<PagingData<Article>> =
         map { page ->
-            page.map { item ->
-                withContext(Dispatchers.Default) {
-                    item.toArticle()
-                }
+            withContext(Dispatchers.Default) {
+                page.map { it.toArticle(isFeatured = false) } // Добавлен параметр isFeatured
             }
         }
 
@@ -58,8 +56,8 @@ object ArticlePagingRepository {
         val source = Pager(
             config = PagingConfig(
                 pageSize = PAGE_SIZE,
-                initialLoadSize = PAGE_SIZE,
-                prefetchDistance = 10,
+                initialLoadSize = PAGE_SIZE * 2,   // 60 элементов сразу
+                prefetchDistance = PAGE_SIZE,      // 30 — грузим заранее
                 maxSize = PAGE_SIZE * 5,
                 enablePlaceholders = false
             ),
@@ -92,8 +90,8 @@ object ArticlePagingRepository {
     fun pagedBookmarks(): Flow<PagingData<Article>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
-            initialLoadSize = PAGE_SIZE,
-            prefetchDistance = 10,
+            initialLoadSize = PAGE_SIZE * 2,
+            prefetchDistance = PAGE_SIZE,
             enablePlaceholders = false
         ),
         pagingSourceFactory = { dao().pagingBookmarks() }

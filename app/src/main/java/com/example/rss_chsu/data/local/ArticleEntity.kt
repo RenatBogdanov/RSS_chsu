@@ -1,19 +1,17 @@
 package com.example.rss_chsu.data.local
 
-import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.rss_chsu.ui.model.Article
-import com.example.rss_chsu.ui.model.KeywordExtractor
-import com.example.rss_chsu.ui.model.RssParser
 
 @Entity(
     tableName = "articles",
     indices = [
-        Index("isBookmarked"),
-        Index("publishedAt"),
-        Index("sourceId")
+        Index(value = ["publishedAt", "fetchedAt"]),
+        Index(value = ["isRead"]),
+        Index(value = ["isBookmarked"]),
+        Index(value = ["sourceId"])
     ]
 )
 data class ArticleEntity(
@@ -30,12 +28,32 @@ data class ArticleEntity(
     val isBookmarked: Boolean,
     val isRead: Boolean,
     val publishedAt: Long,
-    val fetchedAt: Long,
     val keywords: String,
-    @ColumnInfo(defaultValue = "''")
-    val sourceId: String = ""
+    val sourceId: String,
+    val fetchedAt: Long
 )
 
+// Конвертер из БД в UI-модель
+fun ArticleEntity.toArticle(): Article = Article(
+    id = id,
+    title = title,
+    subtitle = subtitle,
+    content = content,
+    sourceName = sourceName,
+    category = category,
+    author = author,
+    date = pubDateFormatted,
+    pubDateFormatted = pubDateFormatted,
+    readTime = readTime,
+    imageUrl = imageUrl,
+    isBookmarked = isBookmarked,
+    isRead = isRead,
+    publishedAt = publishedAt,
+    keywords = keywords.split(",").filter { it.isNotBlank() },
+    sourceId = sourceId
+)
+
+// Конвертер из UI-модели в БД (из-за отсутствия которого была ошибка)
 fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
     id = id,
     title = title,
@@ -49,29 +67,8 @@ fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
     imageUrl = imageUrl,
     isBookmarked = isBookmarked,
     isRead = isRead,
-    publishedAt = if (publishedAt > 0L) publishedAt else fetchedAt,
-    fetchedAt = fetchedAt,
-    keywords = keywords
-        .ifEmpty { KeywordExtractor.extract(title, subtitle, content) }
-        .joinToString(","),
-    sourceId = sourceId
-)
-
-fun ArticleEntity.toArticle(): Article = Article(
-    id = id,
-    title = title,
-    subtitle = subtitle,
-    content = content,
-    sourceName = sourceName,
-    category = category,
-    author = author,
-    date = RssParser.relativeFromMillis(publishedAt),
-    pubDateFormatted = pubDateFormatted,
-    readTime = readTime,
-    imageUrl = imageUrl,
-    isBookmarked = isBookmarked,
-    isRead = isRead,
     publishedAt = publishedAt,
-    keywords = if (keywords.isEmpty()) emptyList() else keywords.split(","),
-    sourceId = sourceId
+    keywords = keywords.joinToString(","),
+    sourceId = sourceId,
+    fetchedAt = fetchedAt
 )

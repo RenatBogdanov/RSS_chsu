@@ -1,7 +1,9 @@
 package com.example.rss_chsu.ui.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
 
+@Immutable
 @Serializable
 data class Article(
     val id: String,
@@ -18,11 +20,12 @@ data class Article(
     val isBookmarked: Boolean = false,
     val isRead: Boolean = false,
     val isFeatured: Boolean = false,
-    val publishedAt: Long = 0L,                 // время публикации, мс
-    val keywords: List<String> = emptyList(),   // ключевые слова для рекомендаций
-    val sourceId: String = ""                   // адрес ленты-источника (Source.domain)
+    val publishedAt: Long = 0L,
+    val keywords: List<String> = emptyList(),
+    val sourceId: String = ""
 )
 
+@Immutable
 @Serializable
 data class Source(
     val id: String,
@@ -34,7 +37,7 @@ data class Source(
     val isSubscribed: Boolean = false,
     val folderName: String? = null,
     val unreadCount: Int = 0,
-    val articleCount: Int = 0                   // всего статей источника в кэше (считает БД)
+    val articleCount: Int = 0
 )
 
 private val ignoreSubdomainsAndTlds = setOf(
@@ -66,12 +69,10 @@ fun Source.matchesArticle(article: Article): Boolean {
     val url = article.id.trim()
     if (srcName.isBlank() && url.isBlank()) return false
 
-    // 1. Direct equality match
     if (name.equals(srcName, ignoreCase = true) || domain.equals(srcName, ignoreCase = true)) {
         return true
     }
 
-    // 2. Direct Cyrillic / English name match
     if (name.length >= 2) {
         if (srcName.equals(name, ignoreCase = true) ||
             (srcName.length >= 3 && (srcName.contains(name, ignoreCase = true) || name.contains(srcName, ignoreCase = true)))
@@ -80,7 +81,6 @@ fun Source.matchesArticle(article: Article): Boolean {
         }
     }
 
-    // 3. Core domain keyword matching (e.g., "rbc" for РБК, "cherinfo" for ЧерИнфо, "lenta" for Lenta.ru)
     val sourceKeywords = extractDomainKeywords(domain) + extractDomainKeywords(name)
     val articleKeywords = extractDomainKeywords(url) + extractDomainKeywords(srcName)
 
@@ -94,6 +94,7 @@ fun Source.matchesArticle(article: Article): Boolean {
     return false
 }
 
+@Immutable
 @Serializable
 data class Folder(
     val id: String,

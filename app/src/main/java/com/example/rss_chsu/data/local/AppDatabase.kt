@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FolderEntity::class,
         SourceProfileEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,18 +26,15 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // Версия 1 содержала только articles. Миграция сохраняет существующие статьи,
-        // закладки и отметки о прочтении, добавляя таблицы источников и папок.
         private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
                     "ALTER TABLE articles ADD COLUMN sourceId TEXT NOT NULL DEFAULT ''"
                 )
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_articles_sourceId ON articles(sourceId)"
                 )
-
-                database.execSQL(
+                db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS sources (
                         domain TEXT NOT NULL,
@@ -50,8 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
-
-                database.execSQL(
+                db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS folders (
                         id TEXT NOT NULL,
@@ -62,8 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
-
-                database.execSQL(
+                db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS source_profiles (
                         domain TEXT NOT NULL,
@@ -76,6 +71,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_articles_publishedAt_fetchedAt ON articles(publishedAt, fetchedAt)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_articles_isRead ON articles(isRead)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_articles_isBookmarked ON articles(isBookmarked)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_articles_sourceId ON articles(sourceId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sources_folderName ON sources(folderName)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_sources_domain ON sources(domain)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -83,7 +101,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "rss.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { INSTANCE = it }
             }
