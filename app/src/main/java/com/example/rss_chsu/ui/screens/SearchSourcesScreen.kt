@@ -1,5 +1,10 @@
 package com.example.rss_chsu.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,6 +21,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,7 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +46,8 @@ import com.example.rss_chsu.ui.model.SourceCategory
 import com.example.rss_chsu.ui.model.SourceRecommendationsViewModel
 import com.example.rss_chsu.ui.model.extractDomainKeywords
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.delay
+
 
 /** Сколько источников показывать в каждой категории, пока она не раскрыта целиком. */
 private const val SECTION_PREVIEW_COUNT = 5
@@ -60,7 +67,36 @@ fun SearchSourcesScreen(
     val recommended by sourcesViewModel.recommendedSources.collectAsState()
     val subscribing by sourcesViewModel.subscribing.collectAsState()
 
+    var previousSubscribing by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var bannerError by remember { mutableStateOf<String?>(null) }
+    var bannerTrigger by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(Unit) { sourcesViewModel.loadPreviews() }
+
+    // Отслеживаем завершение подписки: если источник не добавился — показываем плашку
+    LaunchedEffect(subscribing, realSources) {
+        val finishedDomains = previousSubscribing - subscribing
+        finishedDomains.forEach { domain ->
+            val isNowSubscribed = realSources.any {
+                it.domain.equals(domain, ignoreCase = true) ||
+                        (extractDomainKeywords(it.domain).isNotEmpty() &&
+                                extractDomainKeywords(it.domain) == extractDomainKeywords(domain))
+            }
+            if (!isNowSubscribed) {
+                bannerError = "Не удалось добавить источник ($domain)"
+                bannerTrigger++
+            }
+        }
+        previousSubscribing = subscribing
+    }
+
+    // Автоматически скрываем плашку через 3 секунды
+    LaunchedEffect(bannerTrigger) {
+        if (bannerTrigger > 0 && bannerError != null) {
+            delay(3000L)
+            bannerError = null
+        }
+    }
 
     val folderNames = remember(realFolders) {
         listOf("Все") + realFolders.map { it.name }
@@ -120,17 +156,15 @@ fun SearchSourcesScreen(
 
     val onSubscribe: (Source) -> Unit = { sourcesViewModel.subscribe(it) }
 
-    // Индекс блока выбранной категории (или начала разделов при "Все категории")
     val targetSectionIndex = remember(realFolders.isNotEmpty(), recommended.isNotEmpty(), activeCategories, selectedCategory) {
         val folderOffset = if (realFolders.isNotEmpty()) 1 else 0
         val chipsOffset = 1
-        val recOffset = if (recommended.isNotEmpty()) 2 else 0 // заголовок + горизонтальная карусель
+        val recOffset = if (recommended.isNotEmpty()) 2 else 0
         val baseOffset = folderOffset + chipsOffset + recOffset
 
         if (selectedCategory == null) {
             baseOffset
         } else {
-            // При выбранной категории рендерится один заголовок + список источников
             baseOffset
         }
     }
@@ -148,88 +182,110 @@ fun SearchSourcesScreen(
     ) {
         TopAppLogoBar(
             content = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, ChipUnselected)
                 ) {
-                    Text(
-                        text = "ПОИСК",
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        color = DarkPrimary,
-                        letterSpacing = 2.sp
-                    )
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    Surface(
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(32.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, ChipUnselected)
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Box(
-                                modifier = Modifier.weight(1f),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                if (searchQuery.isEmpty()) {
-                                    Text(
-                                        text = "Поиск по источникам",
-                                        fontSize = 13.sp,
-                                        color = TextSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                BasicTextField(
-                                    value = searchQuery,
-                                    onValueChange = { searchQuery = it },
-                                    singleLine = true,
-                                    textStyle = LocalTextStyle.current.copy(
-                                        fontSize = 13.sp,
-                                        color = TextPrimary
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Поиск по источникам",
+                                    fontSize = 14.sp,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                singleLine = true,
+                                textStyle = LocalTextStyle.current.copy(
+                                    fontSize = 14.sp,
+                                    color = TextPrimary
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { searchQuery = "" },
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Clear,
-                                        contentDescription = "Очистить",
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Очистить",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
                     }
                 }
             }
         )
-
+// Мягко-розовая плашка ошибки под поисковой строкой на 3 секунды
+        AnimatedVisibility(
+            visible = bannerError != null,
+            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFFFECEE),
+                border = BorderStroke(1.dp, Color(0xFFF5B8BF))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = Color(0xFFB3261E),
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        text = bannerError.orEmpty(),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF7D1A15),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -253,9 +309,7 @@ fun SearchSourcesScreen(
                     }
                 }
             }
-
             if (showDiscovery) {
-                // 1. Быстрая навигация по категориям сразу вверху каталога
                 item(key = "category_chips") {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -284,8 +338,6 @@ fun SearchSourcesScreen(
                         }
                     }
                 }
-
-                // 2. Компактная горизонтальная лента рекомендаций (не занимает пол-экрана по вертикали)
                 if (recommended.isNotEmpty()) {
                     item(key = "rec_header") {
                         SectionHeader(
@@ -312,13 +364,10 @@ fun SearchSourcesScreen(
                         }
                     }
                 }
-
-                // 3. Каталог по разделам или выбранная категория целиком
                 val category = selectedCategory
                 if (category == null) {
                     activeCategories.forEach { section ->
                         val list = categorized[section].orEmpty()
-
                         item(key = "sec_${section.name}") {
                             SectionHeader(title = section.title, trailing = "${list.size}")
                         }
@@ -340,7 +389,6 @@ fun SearchSourcesScreen(
                             }
                         }
                     }
-
                     val others = categorized[null].orEmpty()
                     if (others.isNotEmpty()) {
                         item(key = "sec_custom") {
@@ -366,7 +414,6 @@ fun SearchSourcesScreen(
                         trailing = "Найдено ${filteredSources.size}"
                     )
                 }
-
                 if (filteredSources.isEmpty()) {
                     item(key = "flat_empty") {
                         Box(
@@ -393,7 +440,6 @@ fun SearchSourcesScreen(
         }
     }
 }
-
 @Composable
 private fun RecommendedSourceCard(
     rec: RecommendedSource,
@@ -402,16 +448,19 @@ private fun RecommendedSourceCard(
 ) {
     val source = rec.source
     val isAdded = source.isSubscribed || source.folderName != null
-
     Surface(
-        modifier = Modifier.width(248.dp),
+        modifier = Modifier
+            .width(248.dp)
+            .height(116.dp),
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, ChipUnselected)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -455,9 +504,7 @@ private fun RecommendedSourceCard(
                         )
                     }
                 }
-
                 Spacer(modifier = Modifier.width(6.dp))
-
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -482,16 +529,15 @@ private fun RecommendedSourceCard(
                     }
                 }
             }
-
             Text(
                 text = source.description.ifBlank { recommendationHint(rec) },
                 fontSize = 12.sp,
                 color = TextSecondary,
+                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 16.sp
             )
-
             Text(
                 text = recommendationHint(rec),
                 fontSize = 11.sp,
@@ -502,7 +548,6 @@ private fun RecommendedSourceCard(
         }
     }
 }
-
 private fun recommendationHint(rec: RecommendedSource): String {
     val reason = when {
         rec.basedOnInterests && rec.score > 0.0 -> "Подходит под ваши интересы"
@@ -512,7 +557,6 @@ private fun recommendationHint(rec: RecommendedSource): String {
     val category = SourceCategories.of(rec.source)?.title
     return if (category != null) "$category · $reason" else reason
 }
-
 @Composable
 private fun SectionHeader(title: String, trailing: String? = null) {
     Row(
@@ -537,7 +581,6 @@ private fun SectionHeader(title: String, trailing: String? = null) {
         }
     }
 }
-
 @Composable
 private fun ShowAllRow(count: Int, onClick: () -> Unit) {
     Text(
@@ -551,14 +594,14 @@ private fun ShowAllRow(count: Int, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 10.dp)
     )
 }
-
 @Composable
 private fun SourceRow(
     source: Source,
     hint: String? = null,
     subscribing: Set<String>,
     onSubscribe: (Source) -> Unit
-) {
+)
+ {
     SourceSearchResultRow(
         source = source,
         onToggleSubscribe = {
@@ -568,7 +611,6 @@ private fun SourceRow(
         isLoading = source.domain in subscribing
     )
 }
-
 @Composable
 fun SourceSearchResultRow(
     source: Source,
@@ -579,7 +621,6 @@ fun SourceSearchResultRow(
     var isAdding by remember { mutableStateOf(false) }
     val adding = isLoading ?: isAdding
     val clipboardManager = LocalClipboardManager.current
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -609,7 +650,6 @@ fun SourceSearchResultRow(
                         color = TextPrimary
                     )
                 }
-
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = source.name,
@@ -629,7 +669,6 @@ fun SourceSearchResultRow(
                     )
                 }
             }
-
             if (source.isSubscribed || source.folderName != null) {
                 Box(
                     modifier = Modifier
@@ -675,7 +714,6 @@ fun SourceSearchResultRow(
                 }
             }
         }
-
         if (source.description.isNotBlank()) {
             Spacer(modifier = Modifier.height(3.dp))
             Text(
@@ -686,7 +724,6 @@ fun SourceSearchResultRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-
         if (hint != null) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(
