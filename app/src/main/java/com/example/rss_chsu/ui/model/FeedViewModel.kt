@@ -69,10 +69,10 @@ class FeedViewModel : ViewModel() {
         oldestFirst = oldestFirst,
         sourceDomains = sourceDomains,
         folderNames = folderNames
-    ).cachedIn(viewModelScope)
+    )
 
     fun pagedBookmarks(): Flow<PagingData<Article>> =
-        ArticlePagingRepository.pagedBookmarks().cachedIn(viewModelScope)
+        ArticlePagingRepository.pagedBookmarks()
 
     /** Вычисляет похожие статьи при открытии конкретной публикации. */
     fun loadRecommendations(targetArticle: Article) {

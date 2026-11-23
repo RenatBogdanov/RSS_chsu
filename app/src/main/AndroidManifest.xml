@@ -4,8 +4,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-
     <application
+        android:name=".MainApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -14,17 +14,41 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RSS_chsu">
+
         <activity
             android:name=".MainActivity"
+            android:configChanges="uiMode"
             android:exported="true"
             android:theme="@style/Theme.RSS_chsu"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Светлая иконка (активна по умолчанию) -->
+        <activity-alias
+            android:name=".MainActivityLight"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-    </application>
+        </activity-alias>
 
+        <!-- Тёмная иконка (выключена по умолчанию) -->
+        <activity-alias
+            android:name=".MainActivityDark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_dark"
+            android:roundIcon="@mipmap/ic_launcher_dark_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+    </application>
 </manifest>

@@ -35,9 +35,9 @@ fun AddFeedSheet(
             onClick = onDismiss,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+            colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary, contentColor = OnDarkPrimary)
         ) {
-            Text("Поиск источников", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text("Поиск источников", color = OnDarkPrimary, fontWeight = FontWeight.SemiBold)
         }
 
         OutlinedButton(

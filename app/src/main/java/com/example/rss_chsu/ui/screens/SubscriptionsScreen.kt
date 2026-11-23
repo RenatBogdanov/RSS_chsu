@@ -159,14 +159,14 @@ fun SubscriptionsScreen(
                     if (isAddingFeed) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
-                            color = Color.White,
+                            color = OnDarkPrimary,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Добавить",
-                            tint = if (rssUrlInput.isNotBlank()) Color.White else TextSecondary,
+                            tint = if (rssUrlInput.isNotBlank()) OnDarkPrimary else TextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -379,7 +379,7 @@ fun SubscriptionsScreen(
             Button(
                 onClick = { showCreateFolderDialog = true },
                 shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
+                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary, contentColor = OnDarkPrimary),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -389,7 +389,7 @@ fun SubscriptionsScreen(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = OnDarkPrimary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -397,7 +397,7 @@ fun SubscriptionsScreen(
                     text = "Создать папку",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = OnDarkPrimary
                 )
             }
 

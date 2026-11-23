@@ -6,13 +6,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.view.WindowCompat
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import com.example.rss_chsu.ui.model.KtorClient
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.screens.MainScreen
 import com.example.rss_chsu.ui.theme.RSS_chsuTheme
+import com.example.rss_chsu.ui.theme.ThemeManager
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import kotlinx.coroutines.launch
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+        ThemeManager.init(applicationContext)
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
@@ -35,15 +36,10 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        windowInsetsController.isAppearanceLightStatusBars = true
-        windowInsetsController.isAppearanceLightNavigationBars = true
-
         // Открываем локальную БД (Room) и подписываемся на неё. Должно быть до setContent
         RssRepository.init(applicationContext)
 
-        // Асинхронно проверяем работу Ktor-клиента в фоновом потоке,
-        // пока на экране Samsung загружается интерфейс приложения
+        // Асинхронно проверяем работу Ktor-клиента в фоновом потоке
         lifecycleScope.launch {
             try {
                 val response: HttpResponse = KtorClient.httpClient.get("${KtorClient.BASE_URL}/ip")
@@ -54,11 +50,19 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Сохраняем запуск главного экрана, который написал ваш коллега
         setContent {
-            RSS_chsuTheme {
+            val isDarkTheme by ThemeManager.isDarkTheme.collectAsState()
+
+            RSS_chsuTheme(darkTheme = isDarkTheme) {
                 MainScreen()
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            ThemeManager.applyPendingIconChange(this)
         }
     }
 }

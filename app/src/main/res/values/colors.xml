@@ -9,7 +9,8 @@
     <color name="palette_accent_sub">#93B4BC</color>    <!-- Soft Sage Blue: дополнительные акценты -->
 
     <!-- Splash Screen Color -->
-    <color name="splash_bg">#F7F7F5</color>
+    <color name="splash_bg">#FFFFFF</color>
+    <color name="splash_bg_dark">#121212</color>
 
     <!-- Служебные цвета -->
     <color name="black">#FF000000</color>

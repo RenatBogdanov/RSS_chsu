@@ -194,13 +194,14 @@ fun ArticleReaderScreen(
             )
         }
 
+        val borderColor = LightCardBorder
         // Нижняя панель действий читалки
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .drawBehind {
                     drawLine(
-                        color = LightCardBorder,
+                        color = borderColor,
                         start = Offset(0f, 0f),
                         end = Offset(size.width, 0f),
                         strokeWidth = 1.dp.toPx()

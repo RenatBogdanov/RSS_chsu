@@ -32,7 +32,7 @@ import com.example.rss_chsu.ui.theme.*
 fun SettingsScreen() {
     val context = LocalContext.current
     var showDeleteAppDialog by remember { mutableStateOf(false) }
-    var selectedTheme by remember { mutableStateOf(0) } // 0 = Светлая, 1 = Тёмная
+    val isDarkTheme by ThemeManager.isDarkTheme.collectAsState()
 
     LaunchedEffect(context) {
         RssRepository.init(context)
@@ -77,16 +77,16 @@ fun SettingsScreen() {
                 ) {
                     ThemeOptionItem(
                         title = "Светлая",
-                        isDarkTheme = false,
-                        isSelected = selectedTheme == 0,
-                        onClick = { selectedTheme = 0 }
+                        isDarkThemeOption = false,
+                        isSelected = !isDarkTheme,
+                        onClick = { ThemeManager.setDarkTheme(context, false) }
                     )
                     Spacer(modifier = Modifier.width(48.dp))
                     ThemeOptionItem(
                         title = "Тёмная",
-                        isDarkTheme = true,
-                        isSelected = selectedTheme == 1,
-                        onClick = { selectedTheme = 1 }
+                        isDarkThemeOption = true,
+                        isSelected = isDarkTheme,
+                        onClick = { ThemeManager.setDarkTheme(context, true) }
                     )
                 }
             }
@@ -204,15 +204,17 @@ fun SettingsScreen() {
 @Composable
 private fun ThemeOptionItem(
     title: String,
-    isDarkTheme: Boolean,
+    isDarkThemeOption: Boolean,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val mainBorderColor = when {
-        isSelected && isDarkTheme -> Color.White
-        isSelected && !isDarkTheme -> Color(0xFF18181A)
-        else -> LightCardBorder
-    }
+    val primaryThemeColor = TextPrimary
+    val surfaceThemeColor = LightSurface
+
+    val circleBgColor = if (isDarkThemeOption) primaryThemeColor else surfaceThemeColor
+    val wedgeColor = if (isDarkThemeOption) surfaceThemeColor else primaryThemeColor
+
+    val mainBorderColor = if (isSelected) primaryThemeColor else LightCardBorder
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -234,7 +236,7 @@ private fun ThemeOptionItem(
                         color = mainBorderColor,
                         shape = CircleShape
                     )
-                    .background(if (isDarkTheme) Color(0xFF18181A) else Color.White),
+                    .background(circleBgColor),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -252,7 +254,7 @@ private fun ThemeOptionItem(
                     }
                     drawPath(
                         path = path,
-                        color = if (isDarkTheme) Color.White else Color(0xFF18181A)
+                        color = wedgeColor
                     )
                 }
             }
@@ -263,10 +265,10 @@ private fun ThemeOptionItem(
                         .size(22.dp)
                         .align(Alignment.BottomEnd)
                         .clip(CircleShape)
-                        .background(if (isDarkTheme) Color.White else Color(0xFF18181A))
+                        .background(primaryThemeColor)
                         .border(
                             width = 1.dp,
-                            color = if (isDarkTheme) Color(0xFF18181A) else Color.White,
+                            color = surfaceThemeColor,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -274,7 +276,7 @@ private fun ThemeOptionItem(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = if (isDarkTheme) Color(0xFF18181A) else Color.White,
+                        tint = surfaceThemeColor,
                         modifier = Modifier.size(13.dp)
                     )
                 }

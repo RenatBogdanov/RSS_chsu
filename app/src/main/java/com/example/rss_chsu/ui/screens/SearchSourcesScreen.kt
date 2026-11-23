@@ -187,7 +187,7 @@ fun SearchSourcesScreen(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp),
+                        .height(44.dp),
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, ChipUnselected)
@@ -202,7 +202,7 @@ fun SearchSourcesScreen(
                             imageVector = Icons.Default.Search,
                             contentDescription = null,
                             tint = TextSecondary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
 
                         Spacer(modifier = Modifier.width(8.dp))
@@ -214,7 +214,7 @@ fun SearchSourcesScreen(
                             if (searchQuery.isEmpty()) {
                                 Text(
                                     text = "Поиск по источникам",
-                                    fontSize = 14.sp,
+                                    fontSize = 16.sp,
                                     color = TextSecondary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -225,7 +225,7 @@ fun SearchSourcesScreen(
                                 onValueChange = { searchQuery = it },
                                 singleLine = true,
                                 textStyle = LocalTextStyle.current.copy(
-                                    fontSize = 14.sp,
+                                    fontSize = 16.sp,
                                     color = TextPrimary
                                 ),
                                 modifier = Modifier.fillMaxWidth()
@@ -554,7 +554,7 @@ private fun RecommendedSourceCard(
                         Text(
                             text = source.domain,
                             fontSize = 11.sp,
-                            color = DarkPrimary,
+                            color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -572,14 +572,14 @@ private fun RecommendedSourceCard(
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(13.dp),
-                            color = Color.White,
+                            color = OnDarkPrimary,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
                             imageVector = if (isAdded) Icons.Default.Check else Icons.Default.Add,
                             contentDescription = if (isAdded) "В подписках" else "Добавить",
-                            tint = if (isAdded) TextPrimary else Color.White,
+                            tint = if (isAdded) TextPrimary else OnDarkPrimary,
                             modifier = Modifier.size(15.dp)
                         )
                     }
@@ -722,7 +722,7 @@ fun SourceSearchResultRow(
                     Text(
                         text = source.domain,
                         fontSize = 11.sp,
-                        color = DarkPrimary,
+                        color = TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable { clipboardManager.setText(AnnotatedString(source.domain)) }
@@ -760,14 +760,14 @@ fun SourceSearchResultRow(
                     if (adding) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
-                            color = Color.White,
+                            color = OnDarkPrimary,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Добавить",
-                            tint = Color.White,
+                            tint = OnDarkPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                     }

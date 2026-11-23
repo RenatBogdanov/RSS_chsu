@@ -254,7 +254,7 @@ fun TodayFeedScreen(
                                     Text(
                                         text = folder.name,
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                        color = if (isSelected) Color.White else TextPrimary,
+                                        color = if (isSelected) OnDarkPrimary else TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -278,7 +278,7 @@ fun TodayFeedScreen(
                                     Text(
                                         text = source.name,
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                        color = if (isSelected) Color.White else TextPrimary,
+                                        color = if (isSelected) OnDarkPrimary else TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -292,9 +292,9 @@ fun TodayFeedScreen(
                         onClick = { showFilterSheet = false },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary, contentColor = OnDarkPrimary)
                     ) {
-                        Text("Применить", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text("Применить", color = OnDarkPrimary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -559,11 +559,12 @@ private fun BoxScope.ScrollToTopFab(
         SmallFloatingActionButton(
             onClick = onClick,
             containerColor = DarkPrimary,
-            contentColor = Color.White
+            contentColor = OnDarkPrimary
         ) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowUp,
                 contentDescription = "Наверх",
+                tint = OnDarkPrimary,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -614,7 +615,7 @@ fun FilterChipPill(
                 text = text,
                 fontSize = 13.sp,
                 fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                color = if (isSelected) Color.White else TextPrimary
+                color = if (isSelected) OnDarkPrimary else TextPrimary
             )
         }
     }
@@ -674,14 +675,14 @@ fun FeaturedArticleCard(
                         .padding(10.dp)
                         .size(32.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White.copy(alpha = 0.9f))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
                         .clickable { onBookmarkClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (article.isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
                         contentDescription = "В закладки",
-                        tint = DarkPrimary,
+                        tint = TextPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
