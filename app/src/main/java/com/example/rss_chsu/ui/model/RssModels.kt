@@ -19,7 +19,8 @@ data class Article(
     val isRead: Boolean = false,
     val isFeatured: Boolean = false,
     val publishedAt: Long = 0L,                 // время публикации, мс
-    val keywords: List<String> = emptyList()    // ключевые слова для рекомендаций
+    val keywords: List<String> = emptyList(),   // ключевые слова для рекомендаций
+    val sourceId: String = ""                   // адрес ленты-источника (Source.domain)
 )
 
 @Serializable
@@ -32,7 +33,8 @@ data class Source(
     val logoText: String,
     val isSubscribed: Boolean = false,
     val folderName: String? = null,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val articleCount: Int = 0                   // всего статей источника в кэше (считает БД)
 )
 
 private val ignoreSubdomainsAndTlds = setOf(

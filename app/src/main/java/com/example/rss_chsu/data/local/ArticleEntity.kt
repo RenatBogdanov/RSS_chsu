@@ -1,5 +1,6 @@
 package com.example.rss_chsu.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -9,7 +10,11 @@ import com.example.rss_chsu.ui.model.RssParser
 
 @Entity(
     tableName = "articles",
-    indices = [Index("isBookmarked"), Index("publishedAt")]
+    indices = [
+        Index("isBookmarked"),
+        Index("publishedAt"),
+        Index("sourceId")
+    ]
 )
 data class ArticleEntity(
     @PrimaryKey val id: String,
@@ -24,12 +29,11 @@ data class ArticleEntity(
     val imageUrl: String,
     val isBookmarked: Boolean,
     val isRead: Boolean,
-    /** Время публикации (мс). Если в ленте даты нет — время загрузки. */
     val publishedAt: Long,
-    /** Время, когда статья попала в кэш (мс). */
     val fetchedAt: Long,
-    /** Ключевые слова (стемы) через запятую. */
-    val keywords: String
+    val keywords: String,
+    @ColumnInfo(defaultValue = "''")
+    val sourceId: String = ""
 )
 
 fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
@@ -49,18 +53,18 @@ fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
     fetchedAt = fetchedAt,
     keywords = keywords
         .ifEmpty { KeywordExtractor.extract(title, subtitle, content) }
-        .joinToString(",")
+        .joinToString(","),
+    sourceId = sourceId
 )
 
 fun ArticleEntity.toArticle(): Article = Article(
     id = id,
-    title = RssParser.cleanGarbageText(title),
-    subtitle = RssParser.cleanGarbageText(subtitle),
-    content = RssParser.cleanGarbageText(content),
+    title = title,
+    subtitle = subtitle,
+    content = content,
     sourceName = sourceName,
     category = category,
-    author = RssParser.cleanGarbageText(author),
-    // относительная дата пересчитывается при каждой загрузке из БД, чтобы не «протухала»
+    author = author,
     date = RssParser.relativeFromMillis(publishedAt),
     pubDateFormatted = pubDateFormatted,
     readTime = readTime,
@@ -68,5 +72,6 @@ fun ArticleEntity.toArticle(): Article = Article(
     isBookmarked = isBookmarked,
     isRead = isRead,
     publishedAt = publishedAt,
-    keywords = if (keywords.isEmpty()) emptyList() else keywords.split(",")
+    keywords = if (keywords.isEmpty()) emptyList() else keywords.split(","),
+    sourceId = sourceId
 )

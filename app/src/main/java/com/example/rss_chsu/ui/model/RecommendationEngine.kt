@@ -4,90 +4,102 @@ import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
- * Рекомендации на основе ключевых слов.
- *
- * - [getRecommendations]: статьи, похожие на одну конкретную (экран чтения).
- * - [getPersonalized]: персональная лента по профилю интересов (закладки и прочитанное).
- *
- * Статья представлена множеством ключевых слов, где вес слова = IDF
- * (редкие слова информативнее частых). Близость считается косинусной мерой.
+ * Индекс рекомендаций. IDF, векторы и их нормы вычисляются один раз при построении индекса.
+ * Статусы прочтения/закладки передаются отдельно, поэтому их изменение не перестраивает индекс.
  */
-class RecommendationEngine(private val allArticles: List<Article>) {
+class RecommendationEngine(private val corpus: List<Article>) {
+    private data class Vector(val values: Map<String, Double>, val norm: Double)
 
-    private val docFrequency: Map<String, Int> = HashMap<String, Int>().also { map ->
-        allArticles.forEach { article ->
-            keywordsOf(article).forEach { map.merge(it, 1, Int::plus) }
+    private val docFrequency: Map<String, Int> = buildMap {
+        corpus.forEach { article ->
+            keywordsOf(article).distinct().forEach { term ->
+                put(term, (get(term) ?: 0) + 1)
+            }
         }
     }
 
-    private fun keywordsOf(article: Article): List<String> =
-        article.keywords.ifEmpty {
-            KeywordExtractor.extract(article.title, article.subtitle, article.content)
-        }
+    private val vectors: Map<String, Vector> = corpus.associate { article ->
+        article.id to buildVector(article)
+    }
+
+    private fun keywordsOf(article: Article): List<String> = article.keywords.ifEmpty {
+        KeywordExtractor.extract(article.title, article.subtitle, article.content)
+    }
 
     private fun idf(term: String): Double =
-        ln((allArticles.size + 1.0) / ((docFrequency[term] ?: 0) + 1.0)) + 1.0
+        ln((corpus.size + 1.0) / ((docFrequency[term] ?: 0) + 1.0)) + 1.0
 
-    private fun vectorOf(article: Article): Map<String, Double> =
-        keywordsOf(article).associateWith { idf(it) }
-
-    private fun cosine(a: Map<String, Double>, b: Map<String, Double>): Double {
-        if (a.isEmpty() || b.isEmpty()) return 0.0
-        val (small, large) = if (a.size <= b.size) a to b else b to a
-        var dot = 0.0
-        for ((term, weight) in small) {
-            val other = large[term] ?: continue
-            dot += weight * other
-        }
-        if (dot == 0.0) return 0.0
-        val normA = sqrt(a.values.sumOf { it * it })
-        val normB = sqrt(b.values.sumOf { it * it })
-        return dot / (normA * normB)
+    private fun buildVector(article: Article): Vector {
+        val values = keywordsOf(article).distinct().associateWith(::idf)
+        return Vector(values, sqrt(values.values.sumOf { it * it }))
     }
 
-    /** Статьи, похожие на [targetArticle]. */
-    fun getRecommendations(targetArticle: Article, limit: Int = 5): List<Article> {
-        if (allArticles.size <= 1) return emptyList()
-        val targetVector = vectorOf(targetArticle)
+    private fun vectorOf(article: Article): Vector =
+        vectors[article.id] ?: buildVector(article)
 
-        return allArticles
-            .asSequence()
+    private fun cosine(a: Vector, b: Vector): Double {
+        if (a.values.isEmpty() || b.values.isEmpty() || a.norm == 0.0 || b.norm == 0.0) return 0.0
+        val (small, large) = if (a.values.size <= b.values.size) a.values to b.values else b.values to a.values
+        var dot = 0.0
+        for ((term, weight) in small) dot += weight * (large[term] ?: 0.0)
+        return if (dot == 0.0) 0.0 else dot / (a.norm * b.norm)
+    }
+
+    /** Похожие статьи. Кандидаты могут содержать актуальные статусы, но векторы берутся из кэша. */
+    fun getRecommendations(targetArticle: Article, limit: Int = 5): List<Article> =
+        getRecommendations(targetArticle, corpus, limit)
+
+    fun getRecommendations(
+        targetArticle: Article,
+        candidates: List<Article>,
+        limit: Int = 5
+    ): List<Article> {
+        if (candidates.size <= 1) return emptyList()
+        val targetVector = vectorOf(targetArticle)
+        return candidates.asSequence()
             .filter { it.id != targetArticle.id }
             .map { it to cosine(targetVector, vectorOf(it)) }
             .filter { it.second > 0.0 }
-            .sortedByDescending { it.second } // сортировка стабильна: при равенстве первыми идут более свежие
+            .sortedByDescending { it.second }
             .take(limit)
             .map { it.first }
             .toList()
     }
 
     /**
-     * Персональные рекомендации: профиль собирается из закладок (вес 3) и прочитанного (вес 1).
-     * Показываем только непрочитанные и не добавленные в закладки. Пока профиль пуст — просто свежие статьи.
+     * Персональные рекомендации по актуальному списку статусов.
+     * Профиль: закладки с весом 3, прочитанное с весом 1.
      */
-    fun getPersonalized(limit: Int = 20): List<Article> {
-        val candidates = allArticles.filter { !it.isRead && !it.isBookmarked }
+    fun getPersonalized(currentArticles: List<Article>, limit: Int = 20): List<Article> {
+        val candidates = currentArticles.filter { !it.isRead && !it.isBookmarked }
+        if (candidates.isEmpty()) return emptyList()
 
         val profile = HashMap<String, Double>()
-        allArticles.forEach { article ->
+        currentArticles.forEach { article ->
             val weight = (if (article.isBookmarked) BOOKMARK_WEIGHT else 0.0) +
                     (if (article.isRead) READ_WEIGHT else 0.0)
             if (weight > 0.0) {
-                keywordsOf(article).forEach { term ->
+                keywordsOf(article).distinct().forEach { term ->
                     profile.merge(term, idf(term) * weight, Double::plus)
                 }
             }
         }
-        if (profile.isEmpty()) return candidates.take(limit)
 
-        return candidates
-            .map { it to cosine(profile, vectorOf(it)) }
+        if (profile.isEmpty()) return candidates.take(limit)
+        val profileVector = Vector(profile, sqrt(profile.values.sumOf { it * it }))
+
+        return candidates.asSequence()
+            .map { it to cosine(profileVector, vectorOf(it)) }
             .filter { it.second > 0.0 }
             .sortedByDescending { it.second }
             .take(limit)
             .map { it.first }
+            .toList()
             .ifEmpty { candidates.take(limit) }
     }
+
+    /** Совместимость со старым вызовом. */
+    fun getPersonalized(limit: Int = 20): List<Article> = getPersonalized(corpus, limit)
 
     private companion object {
         const val BOOKMARK_WEIGHT = 3.0
