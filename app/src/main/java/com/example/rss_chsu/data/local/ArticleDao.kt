@@ -10,10 +10,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ArticleDao {
 
-    // Полные записи используются только для точечного чтения/операций с БД.
-    @Query("SELECT * FROM articles ORDER BY publishedAt DESC, fetchedAt DESC")
-    fun observeAll(): Flow<List<ArticleEntity>>
-
     /** Индекс для рекомендаций без поля content: не вытаскиваем тексты всех публикаций. */
     @Query(
         """
@@ -142,7 +138,7 @@ interface ArticleDao {
     @Query("DELETE FROM articles WHERE isBookmarked = 0 AND fetchedAt < :minFetchedAt")
     suspend fun deleteOlderThan(minFetchedAt: Long): Int
 
-    /** Оставляет max самых свежих незакладок в каждом источнике. */
+    /** Оставляет max самых свежих статей без закладок в каждом источнике. */
     @Query(
         """
         DELETE FROM articles
@@ -159,7 +155,7 @@ interface ArticleDao {
     )
     suspend fun deleteOverLimitForSource(sourceId: String, max: Int): Int
 
-    /** Оставляет max самых свежих незакладок суммарно по приложению. */
+    /** Оставляет max самых свежих статей без закладок суммарно по приложению. */
     @Query(
         """
         DELETE FROM articles
