@@ -98,6 +98,7 @@ fun SavedArticlesScreen(
                         val article = savedArticles[index]
                         if (article != null) {
                             SwipeToDeleteBookmarkContainer(
+                                key = article.id,
                                 onDelete = { feedViewModel.onBookmarkClick(article.id) }
                             ) {
                                 FeedArticleRow(
@@ -144,6 +145,7 @@ fun SavedArticlesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToDeleteBookmarkContainer(
+    key: Any? = null,
     onDelete: () -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -156,6 +158,10 @@ fun SwipeToDeleteBookmarkContainer(
         },
         positionalThreshold = { it * 0.5f }
     )
+
+    LaunchedEffect(key) {
+        dismissState.reset()
+    }
 
     SwipeToDismissBox(
         state = dismissState,

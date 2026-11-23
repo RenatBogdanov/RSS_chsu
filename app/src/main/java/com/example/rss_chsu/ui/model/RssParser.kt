@@ -291,7 +291,16 @@ object RssParser {
         }
 
         val rawFeedTitle = raw.title.orEmpty().replace(tagStripRegex, "").trim()
-        val feedTitle = cleanHtmlEntities(rawFeedTitle).ifBlank { sourceNameDefault }
+        var feedTitle = cleanHtmlEntities(rawFeedTitle).ifBlank { sourceNameDefault }
+
+        if (feedTitle.contains("Официальный сайт Череповца", ignoreCase = true) || 
+            feedTitle.contains("Череповец", ignoreCase = true) || 
+            feedTitle.contains("Череповца", ignoreCase = true) || 
+            feedTitle.contains("cherinfo", ignoreCase = true)
+        ) {
+            feedTitle = "Новости Череповца"
+        }
+
         val feedDescription = cleanHtmlEntities(raw.description.orEmpty().replace(tagStripRegex, ""))
 
         val articles = ArrayList<Article>()
@@ -396,22 +405,53 @@ object RssParser {
     private val monthFormat = ThreadLocal.withInitial { SimpleDateFormat("MMM", Locale.ENGLISH) }
 
     fun parseDateToMillis(dateStr: String?): Long {
-        if (dateStr.isNullOrEmpty()) return 0L
+        if (dateStr.isNullOrEmpty()) return System.currentTimeMillis()
+        val trimmed = dateStr.trim()
 
         for (format in dateFormatters.get()!!) {
             try {
-                val date = format.parse(dateStr.trim())
+                val date = format.parse(trimmed)
                 if (date != null) return date.time
             } catch (_: Exception) {
             }
         }
-        return 0L
+
+        val ruTrimmed = replaceRussianMonths(trimmed)
+        if (ruTrimmed != trimmed) {
+            for (format in dateFormatters.get()!!) {
+                try {
+                    val date = format.parse(ruTrimmed)
+                    if (date != null) return date.time
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        return System.currentTimeMillis()
+    }
+
+    private fun replaceRussianMonths(raw: String): String {
+        var s = raw
+        val monthsMap = mapOf(
+            "янв" to "Jan", "фев" to "Feb", "мар" to "Mar", "апр" to "Apr",
+            "мая" to "May", "май" to "May", "июн" to "Jun", "июл" to "Jul",
+            "авг" to "Aug", "сен" to "Sep", "окт" to "Oct", "ноя" to "Nov", "дек" to "Dec"
+        )
+        for ((ru, en) in monthsMap) {
+            if (s.contains(ru, ignoreCase = true)) {
+                s = s.replace(Regex("(?i)$ru[а-я]*"), en)
+                break
+            }
+        }
+        return s
     }
 
     fun relativeFromMillis(millis: Long): String {
-        if (millis == 0L) return "недавно"
+        if (millis <= 0L) return "только что"
 
         val diffMillis = System.currentTimeMillis() - millis
+        if (diffMillis < 0) return "только что"
+
         val minutes = diffMillis / (1000 * 60)
         val hours = minutes / 60
         val days = hours / 24
@@ -420,18 +460,17 @@ object RssParser {
 
         return when {
             minutes < 1 -> "только что"
-            minutes < 60 -> "${minutes}м"
-            hours < 24 -> "${hours}ч"
-            days < 7 -> "${days}д"
-            months < 12 -> "${months.coerceAtLeast(1)}мес"
-            else -> "${years}г"
+            minutes < 60 -> "$minutes мин."
+            hours < 24 -> "$hours час."
+            days < 30 -> "$days дн."
+            months < 12 -> "${months.coerceAtLeast(1)} мес."
+            else -> "$years год."
         }
     }
 
     private fun parseRssDateToRelative(dateStr: String?): String {
-        if (dateStr.isNullOrEmpty()) return "недавно"
         val millis = parseDateToMillis(dateStr)
-        return if (millis == 0L) dateStr.take(16) else relativeFromMillis(millis)
+        return relativeFromMillis(millis)
     }
 
     private fun parseRssDateToRussian(dateStr: String?): String {

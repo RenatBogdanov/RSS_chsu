@@ -33,16 +33,19 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.paging.LoadState
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.components.TopAppLogoBar
+import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
 import com.example.rss_chsu.ui.model.Folder
@@ -71,6 +74,7 @@ fun TodayFeedScreen(
     var selectedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
     var selectedSources by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFilterSheet by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     val filterOptions = remember(totalArticleCount, personalizedArticles.size, unreadArticleCount) {
         listOf(
@@ -107,19 +111,58 @@ fun TodayFeedScreen(
     ) {
         TopAppLogoBar(
             rightAction = {
-                IconButton(
-                    onClick = { showFilterSheet = true },
-                    modifier = Modifier.size(32.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = RssIcons.Tune,
-                        contentDescription = "Фильтр",
-                        tint = DarkPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    IconButton(
+                        onClick = {
+                            if (!isRefreshing) {
+                                coroutineScope.launch {
+                                    isRefreshing = true
+                                    RssRepository.refreshAllSources()
+                                    isRefreshing = false
+                                }
+                            }
+                        },
+                        enabled = !isRefreshing,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Обновить",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { showFilterSheet = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = RssIcons.Tune,
+                            contentDescription = "Фильтр",
+                            tint = DarkPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+        ) {
+            if (isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxSize(),
+                    color = DarkPrimary
+                )
+            }
+        }
 
         CustomTabRow(
             pagerState = pagerState,
@@ -145,7 +188,8 @@ fun TodayFeedScreen(
                 sourceNameIndex = sourceNameIndex,
                 onArticleClick = onArticleClick,
                 onBookmarkClick = onBookmarkClick,
-                totalArticleCount = totalArticleCount
+                totalArticleCount = totalArticleCount,
+                isRefreshing = isRefreshing
             )
         }
 
@@ -334,12 +378,22 @@ private fun FeedPage(
     sourceNameIndex: Map<String, String>,
     onArticleClick: (Article) -> Unit,
     onBookmarkClick: (Article) -> Unit,
-    totalArticleCount: Int
+    totalArticleCount: Int,
+    isRefreshing: Boolean = false
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val showScrollToTop by remember {
         derivedStateOf { listState.canScrollBackward }
+    }
+    val isNearTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex <= 1 }
+    }
+
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing && isNearTop) {
+            listState.scrollToItem(0)
+        }
     }
 
     val pagingFlow = remember(
@@ -370,12 +424,6 @@ private fun FeedPage(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 160.dp)
         ) {
-            if (refreshState is LoadState.Loading) {
-                item(key = "loading_$pageIndex") {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = DarkPrimary)
-                }
-            }
-
             if (!hasVisibleItems && refreshState is LoadState.Error) {
                 item(key = "error_$pageIndex") {
                     TextButton(
@@ -413,7 +461,7 @@ private fun FeedPage(
             } else if (pageIndex == 1) {
                 itemsIndexed(
                     filteredPersonalized,
-                    key = { _, article -> "personalized_${article.id}" },
+                    key = if (isNearTop) null else { _, article -> "personalized_${article.id}" },
                     contentType = { index, _ -> if (index == 0) "featured" else "row" }
                 ) { index, article ->
                     if (index == 0) {
@@ -437,7 +485,7 @@ private fun FeedPage(
             } else {
                 items(
                     count = pagedArticles.itemCount,
-                    key = pagedArticles.itemKey { it.id },
+                    key = if (isNearTop) null else pagedArticles.itemKey { it.id },
                     contentType = { index -> if (index == 0) "featured" else "row" }
                 ) { index ->
                     val article = pagedArticles[index]
@@ -620,14 +668,15 @@ fun FeaturedArticleCard(
                     )
                 }
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.1f)))
-                IconButton(
-                    onClick = onBookmarkClick,
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(8.dp)
+                        .padding(10.dp)
                         .size(32.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.White.copy(alpha = 0.9f))
+                        .clickable { onBookmarkClick() },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (article.isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,

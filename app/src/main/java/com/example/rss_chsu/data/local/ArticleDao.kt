@@ -174,6 +174,10 @@ interface ArticleDao {
     @Query("DELETE FROM articles WHERE sourceId = :sourceId AND isBookmarked = 0")
     suspend fun deleteNonBookmarkedBySource(sourceId: String): Int
 
+    /** Удаляет не-закладки, источники которых больше не находятся в подписках. */
+    @Query("DELETE FROM articles WHERE isBookmarked = 0 AND sourceId NOT IN (SELECT domain FROM sources)")
+    suspend fun deleteOrphanUnbookmarkedArticles(): Int
+
     @Query("DELETE FROM articles")
     suspend fun deleteAll(): Int
 

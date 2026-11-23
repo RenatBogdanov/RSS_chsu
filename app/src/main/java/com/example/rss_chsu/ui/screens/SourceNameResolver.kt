@@ -13,6 +13,7 @@ internal object SourceNameResolver {
             PopularSources.topFeeds.forEach { source ->
                 put(key(source.name), source.name)
                 put(key(source.domain), source.name)
+                put(key(source.id), source.name)
             }
         }
     }
@@ -36,6 +37,14 @@ internal object SourceNameResolver {
 
     fun clean(rawName: String, index: Map<String, String>): String {
         if (rawName.isBlank()) return "Источник"
+
+        if (rawName.contains("Череповец", ignoreCase = true) || 
+            rawName.contains("Череповца", ignoreCase = true) || 
+            rawName.contains("cherinfo", ignoreCase = true)
+        ) {
+            return "Новости Череповца"
+        }
+
         index[key(rawName)]?.let { return it }
 
         var clean = rawName.trim()

@@ -686,15 +686,18 @@ fun FolderItemRow(
                 } else {
                     sourcesInFolder.forEach { source ->
                         val count = source.articleCount
-                        SwipeToDeleteContainer(
-                            onDelete = { onDeleteSource(source.domain) }
-                        ) {
-                            SourceSubItemRow(
-                                source = source,
-                                articleCount = count,
-                                horizontalPadding = 0.dp,
-                                onMoveClick = { onMoveSource(source) }
-                            )
+                        key(source.id) {
+                            SwipeToDeleteContainer(
+                                key = source.id,
+                                onDelete = { onDeleteSource(source.domain) }
+                            ) {
+                                SourceSubItemRow(
+                                    source = source,
+                                    articleCount = count,
+                                    horizontalPadding = 0.dp,
+                                    onMoveClick = { onMoveSource(source) }
+                                )
+                            }
                         }
                     }
                 }
@@ -777,6 +780,7 @@ fun SourceSubItemRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeToDeleteContainer(
+    key: Any? = null,
     onDelete: () -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -791,6 +795,10 @@ fun SwipeToDeleteContainer(
         },
         positionalThreshold = { it * 0.5f }
     )
+
+    LaunchedEffect(key) {
+        dismissState.reset()
+    }
 
     SwipeToDismissBox(
         state = dismissState,

@@ -17,6 +17,9 @@ import io.ktor.client.statement.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.URI
 import java.nio.charset.Charset
 import kotlin.time.Duration.Companion.milliseconds
@@ -36,7 +40,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /** Лимиты кэша. Закладки в лимиты не входят и никогда не удаляются автоматически. */
 data class CachePolicy(
     val maxArticlesPerSource: Int = 100,
-    val maxArticles: Int = 1000,
+    val maxArticles: Int = 5000,
     val maxAgeDays: Int = 30
 ) {
     val maxAgeMillis: Long get() = maxAgeDays * 24L * 60 * 60 * 1000
@@ -56,7 +60,7 @@ object RssRepository {
     private const val REFRESH_START_DELAY_MILLIS = 1_500L
 
     // Ограничитель количества одновременных загрузок RSS-лент.
-    private val fetchSemaphore = Semaphore(3)
+    private val fetchSemaphore = Semaphore(15)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -245,7 +249,7 @@ object RssRepository {
     // ---------------------------------------------------------
 
     /** Фоновое обновление публикаций для всех подписок. */
-    suspend fun refreshAllSources(): Boolean =
+    suspend fun refreshAllSources(forceFull: Boolean = false): Boolean =
         withContext(Dispatchers.IO) {
 
             val currentSources = sourceDao.getSources()
@@ -256,37 +260,46 @@ object RssRepository {
 
             var hasNewData = false
 
-            for (source in currentSources) {
-                try {
-                    val cleanUrl = normalizeUrl(source.domain)
+            val fetchBlock: suspend CoroutineScope.() -> Unit = {
+                currentSources.map { source ->
+                    async(Dispatchers.IO) {
+                        try {
+                            val cleanUrl = normalizeUrl(source.domain)
+                            val response = KtorClient.httpClient.get(cleanUrl)
+                            val bytes = response.readBytes()
+                            val xmlText = decodeXmlBytes(bytes)
 
-                    fetchSemaphore.withPermit {
+                            val (_, fetchedArticles) =
+                                RssParser.parseRss(
+                                    xmlText,
+                                    source.name,
+                                    maxItemsToParse = REFRESH_MAX_ITEMS
+                                )
 
-                        val response =
-                            KtorClient.httpClient.get(cleanUrl)
-
-                        val bytes = response.readBytes()
-                        val xmlText = decodeXmlBytes(bytes)
-
-                        val (_, fetchedArticles) =
-                            RssParser.parseRss(
-                                xmlText,
-                                source.name,
-                                maxItemsToParse = REFRESH_MAX_ITEMS
-                            )
-
-                        if (fetchedArticles.isNotEmpty()) {
-                            saveArticles(
-                                fetchedArticles.map { article ->
-                                    article.copy(sourceId = source.domain)
-                                }
-                            )
-                            hasNewData = true
+                            if (fetchedArticles.isNotEmpty()) {
+                                saveArticles(
+                                    fetchedArticles.map { article ->
+                                        article.copy(sourceId = source.domain)
+                                    }
+                                )
+                                hasNewData = true
+                            }
+                        } catch (_: Throwable) {
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                }.awaitAll()
+            }
+
+            if (forceFull) {
+                coroutineScope { fetchBlock() }
+            } else {
+                withTimeoutOrNull(3000L) {
+                    coroutineScope { fetchBlock() }
                 }
+            }
+
+            if (hasNewData) {
+                scope.launch { enforceCacheLimit() }
             }
 
             hasNewData
@@ -376,10 +389,6 @@ object RssRepository {
                         dao.adoptArticles(sourceId, ids)
                     }
             }
-
-        if (entities.isNotEmpty()) {
-            enforceCacheLimit()
-        }
     }
 
     // ---------------------------------------------------------
@@ -387,21 +396,9 @@ object RssRepository {
     // ---------------------------------------------------------
 
     /** Удаляет устаревшие и лишние статьи, кроме закладок. */
-    suspend fun enforceCacheLimit() {
-
+    suspend fun enforceCacheLimit() = withContext(Dispatchers.IO) {
         val policy = cachePolicy
-
-        dao.deleteOlderThan(
-            System.currentTimeMillis() - policy.maxAgeMillis
-        )
-
-        for (source in sourceDao.getSources()) {
-            dao.deleteOverLimitForSource(
-                source.domain,
-                policy.maxArticlesPerSource
-            )
-        }
-
+        dao.deleteOlderThan(System.currentTimeMillis() - policy.maxAgeMillis)
         dao.deleteOverLimit(policy.maxArticles)
     }
 
@@ -818,6 +815,7 @@ object RssRepository {
     fun toggleBookmark(articleId: String) {
         scope.launch {
             dao.toggleBookmark(articleId)
+            dao.deleteOrphanUnbookmarkedArticles()
         }
     }
 
@@ -842,6 +840,7 @@ object RssRepository {
         scope.launch {
             dao.deleteNonBookmarkedBySource(sourceDomain)
             sourceDao.deleteSource(sourceDomain)
+            dao.deleteOrphanUnbookmarkedArticles()
         }
     }
 
@@ -867,6 +866,27 @@ object RssRepository {
             dao.deleteAll()
             sourceDao.deleteAllSources()
             sourceDao.deleteAllFolders()
+        }
+    }
+
+    /** Добавление 50 случайных популярных источников каталога в подписки. */
+    fun addAllPopularSources() {
+        scope.launch {
+            val popular = PopularSources.topFeeds.shuffled().take(50)
+            val now = System.currentTimeMillis()
+            for (src in popular) {
+                sourceDao.upsertSource(
+                    SourceEntity(
+                        domain = src.domain,
+                        name = src.name,
+                        description = src.description,
+                        logoText = src.logoText,
+                        folderName = null,
+                        addedAt = now
+                    )
+                )
+            }
+            refreshAllSources(forceFull = true)
         }
     }
 }

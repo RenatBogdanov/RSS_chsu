@@ -1,16 +1,25 @@
 package com.example.rss_chsu.ui.screens
 
 import android.text.format.Formatter
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,6 +31,8 @@ import com.example.rss_chsu.ui.theme.*
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
+    var showDeleteAppDialog by remember { mutableStateOf(false) }
+    var selectedTheme by remember { mutableStateOf(0) } // 0 = Светлая, 1 = Тёмная
 
     LaunchedEffect(context) {
         RssRepository.init(context)
@@ -44,13 +55,43 @@ fun SettingsScreen() {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            OutlinedButton(
-                onClick = { /* TODO */ },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp)
+            Text(
+                text = "Оформление",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = ChipUnselected.copy(alpha = 0.6f),
+                border = BorderStroke(1.dp, LightCardBorder.copy(alpha = 0.5f))
             ) {
-                Text("Оформление и тема", color = TextPrimary, fontWeight = FontWeight.Medium)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp, horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ThemeOptionItem(
+                        title = "Светлая",
+                        isDarkTheme = false,
+                        isSelected = selectedTheme == 0,
+                        onClick = { selectedTheme = 0 }
+                    )
+                    Spacer(modifier = Modifier.width(48.dp))
+                    ThemeOptionItem(
+                        title = "Тёмная",
+                        isDarkTheme = true,
+                        isSelected = selectedTheme == 1,
+                        onClick = { selectedTheme = 1 }
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Показываем объём полезных данных статей
             Row(
@@ -75,29 +116,176 @@ fun SettingsScreen() {
 
             OutlinedButton(
                 onClick = {
+                    RssRepository.addAllPopularSources()
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.Red
+                )
+            ) {
+                Text(
+                    "Подписаться на 50 источников",
+                    color = Color.Red,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            OutlinedButton(
+                onClick = {
                     // Полная очистка всех данных (подписки, статьи, папки).
                     RssRepository.clearAllData()
                 },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = androidx.compose.ui.graphics.Color.Red
+                    contentColor = Color.Red
                 )
             ) {
                 Text(
-                    "Сбросить все данные (Тест)",
-                    color = androidx.compose.ui.graphics.Color.Red,
+                    "Сбросить все данные",
+                    color = Color.Red,
                     fontWeight = FontWeight.Medium
                 )
             }
 
             OutlinedButton(
-                onClick = { /* TODO */ },
+                onClick = {
+                    showDeleteAppDialog = true
+                },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.Red
+                )
             ) {
-                Text("Уведомления", color = TextPrimary, fontWeight = FontWeight.Medium)
+                Text(
+                    "Удалить приложение",
+                    color = Color.Red,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
+
+        if (showDeleteAppDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteAppDialog = false },
+                containerColor = LightSurface,
+                title = {
+                    Text(
+                        text = "Удалить приложение?",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Вы уверены, что хотите удалить приложение?",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showDeleteAppDialog = false }) {
+                        Text("Нет", fontWeight = FontWeight.Bold, color = DarkPrimary)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteAppDialog = false }) {
+                        Text("Нет", fontWeight = FontWeight.Bold, color = TextSecondary)
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeOptionItem(
+    title: String,
+    isDarkTheme: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val mainBorderColor = when {
+        isSelected && isDarkTheme -> Color.White
+        isSelected && !isDarkTheme -> Color(0xFF18181A)
+        else -> LightCardBorder
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+    ) {
+        Box(
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .border(
+                        width = if (isSelected) 2.5.dp else 1.dp,
+                        color = mainBorderColor,
+                        shape = CircleShape
+                    )
+                    .background(if (isDarkTheme) Color(0xFF18181A) else Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val path = Path().apply {
+                        moveTo(size.width * 0.72f, 0f)
+                        lineTo(size.width, 0f)
+                        lineTo(size.width, size.height * 0.28f)
+                        arcTo(
+                            rect = Rect(0f, 0f, size.width, size.height),
+                            startAngleDegrees = 0f,
+                            sweepAngleDegrees = -90f,
+                            forceMoveTo = false
+                        )
+                        close()
+                    }
+                    drawPath(
+                        path = path,
+                        color = if (isDarkTheme) Color.White else Color(0xFF18181A)
+                    )
+                }
+            }
+
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(CircleShape)
+                        .background(if (isDarkTheme) Color.White else Color(0xFF18181A))
+                        .border(
+                            width = 1.dp,
+                            color = if (isDarkTheme) Color(0xFF18181A) else Color.White,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = if (isDarkTheme) Color(0xFF18181A) else Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) TextPrimary else TextSecondary
+        )
     }
 }

@@ -18,6 +18,14 @@ object KtorClient {
         install(DefaultRequest) {
             header(HttpHeaders.UserAgent, "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
             header(HttpHeaders.Accept, "application/rss+xml, application/xml, text/xml, application/atom+xml, text/html, */*")
+            header(HttpHeaders.CacheControl, "no-cache, no-store, must-revalidate")
+            header(HttpHeaders.Pragma, "no-cache")
+        }
+
+        install(HttpTimeout) {
+            requestTimeoutMillis = 3_000
+            connectTimeoutMillis = 3_000
+            socketTimeoutMillis = 3_000
         }
 
         install(ContentNegotiation) {
@@ -29,8 +37,8 @@ object KtorClient {
         }
 
         engine {
-            connectTimeout = 15_000
-            socketTimeout = 15_000
+            connectTimeout = 3_000
+            socketTimeout = 3_000
         }
     }
 }
