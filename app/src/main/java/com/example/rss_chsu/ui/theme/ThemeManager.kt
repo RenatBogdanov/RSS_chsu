@@ -14,9 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
 object ThemeManager {
     private const val PREFS_NAME = "app_theme_prefs"
     private const val KEY_IS_DARK_THEME = "is_dark_theme"
+    private const val KEY_IS_LARGE_CARDS = "is_large_cards"
 
     private val _isDarkTheme = MutableStateFlow(false)
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+
+    private val _isLargeCards = MutableStateFlow(false)
+    val isLargeCards: StateFlow<Boolean> = _isLargeCards.asStateFlow()
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -33,6 +37,7 @@ object ThemeManager {
         }
 
         _isDarkTheme.value = isDark
+        _isLargeCards.value = prefs.getBoolean(KEY_IS_LARGE_CARDS, false)
         syncSystemNightMode(context, isDark)
     }
 
@@ -44,6 +49,14 @@ object ThemeManager {
         prefs.edit().putBoolean(KEY_IS_DARK_THEME, isDark).apply()
 
         syncSystemNightMode(context, isDark)
+    }
+
+    fun setLargeCards(context: Context, isLarge: Boolean) {
+        if (_isLargeCards.value == isLarge) return
+
+        _isLargeCards.value = isLarge
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_IS_LARGE_CARDS, isLarge).apply()
     }
 
     fun applyPendingIconChange(context: Context) {

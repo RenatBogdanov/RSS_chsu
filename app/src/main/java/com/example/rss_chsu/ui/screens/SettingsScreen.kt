@@ -8,8 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
@@ -33,6 +35,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
     var showDeleteAppDialog by remember { mutableStateOf(false) }
     val isDarkTheme by ThemeManager.isDarkTheme.collectAsState()
+    val isLargeCards by ThemeManager.isLargeCards.collectAsState()
 
     LaunchedEffect(context) {
         RssRepository.init(context)
@@ -52,6 +55,7 @@ fun SettingsScreen() {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -87,6 +91,55 @@ fun SettingsScreen() {
                         isDarkThemeOption = true,
                         isSelected = isDarkTheme,
                         onClick = { ThemeManager.setDarkTheme(context, true) }
+                    )
+                }
+            }
+
+            Text(
+                text = "Вид карточек в ленте",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ChipUnselected, RoundedCornerShape(12.dp))
+                    .height(40.dp)
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (!isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
+                        .clickable { ThemeManager.setLargeCards(context, false) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Компактный",
+                        fontSize = 13.sp,
+                        fontWeight = if (!isLargeCards) FontWeight.Bold else FontWeight.Medium,
+                        color = if (!isLargeCards) TextPrimary else TextSecondary
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
+                        .clickable { ThemeManager.setLargeCards(context, true) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Крупный",
+                        fontSize = 13.sp,
+                        fontWeight = if (isLargeCards) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isLargeCards) TextPrimary else TextSecondary
                     )
                 }
             }

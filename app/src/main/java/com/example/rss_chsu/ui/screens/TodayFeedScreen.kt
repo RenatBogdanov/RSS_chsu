@@ -79,6 +79,7 @@ fun TodayFeedScreen(
     var isRefreshing by remember { mutableStateOf(false) }
 
     val articleStatuses by feedViewModel.articleStatuses.collectAsState()
+    val isLargeCards by ThemeManager.isLargeCards.collectAsState()
 
     val filterOptions = remember(totalArticleCount, personalizedArticles.size, unreadArticleCount) {
         listOf(
@@ -199,6 +200,7 @@ fun TodayFeedScreen(
                 pageIndex = page,
                 filteredPersonalized = filteredPersonalized,
                 articleStatuses = articleStatuses,
+                isLargeCards = isLargeCards,
                 isAscendingSort = isAscendingSort,
                 selectedSourceDomains = selectedSourceDomains,
                 folderNames = folderNames,
@@ -396,6 +398,7 @@ private fun FeedPage(
     pageIndex: Int,
     filteredPersonalized: List<Article>,
     articleStatuses: Map<String, ArticleStatus>,
+    isLargeCards: Boolean,
     isAscendingSort: Boolean,
     selectedSourceDomains: List<String>,
     folderNames: List<String>,
@@ -484,11 +487,11 @@ private fun FeedPage(
                 itemsIndexed(
                     filteredPersonalized,
                     key = { _, article -> "personalized_${article.id}" },
-                    contentType = { index, _ -> if (index == 0) "featured" else "row" }
+                    contentType = { index, _ -> if (isLargeCards || index == 0) "featured" else "row" }
                 ) { index, article ->
                     val status = articleStatuses[article.id]
                     val effectiveBookmarked = status?.isBookmarked ?: article.isBookmarked
-                    if (index == 0) {
+                    if (isLargeCards || index == 0) {
                         FeaturedArticleCard(
                             article = article,
                             isBookmarked = effectiveBookmarked,
@@ -513,11 +516,11 @@ private fun FeedPage(
                 items(
                     count = pagedArticles.itemCount,
                     key = pagedArticles.itemKey { it.id },
-                    contentType = { index -> if (index == 0) "featured" else "row" }
+                    contentType = { index -> if (isLargeCards || index == 0) "featured" else "row" }
                 ) { index ->
                     val article = pagedArticles[index]
                     if (article != null) {
-                        if (index == 0) {
+                        if (isLargeCards || index == 0) {
                             val status = articleStatuses[article.id]
                             val effectiveBookmarked = status?.isBookmarked ?: article.isBookmarked
                             FeaturedArticleCard(
