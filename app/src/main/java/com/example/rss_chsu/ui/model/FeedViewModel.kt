@@ -96,4 +96,29 @@ class FeedViewModel : ViewModel() {
     fun onReadToggle(articleId: String) {
         RssRepository.toggleRead(articleId)
     }
+
+    /**
+     * Возвращает предыдущую статью перед [currentId] по порядку в общем списке [articles].
+     * Возвращает null, если текущая первая или не найдена.
+     */
+    fun getPreviousArticle(currentId: String): Article? {
+        val list = articles.value
+        val index = list.indexOfFirst { it.id == currentId }
+        return if (index > 0) list[index - 1] else null
+    }
+
+    /**
+     * Возвращает следующую статью после [currentId] по порядку в общем списке [articles].
+     * Возвращает null, если текущая последняя или не найдена.
+     */
+    fun getNextArticle(currentId: String): Article? {
+        val list = articles.value
+        val index = list.indexOfFirst { it.id == currentId }
+        return if (index >= 0 && index + 1 < list.size) list[index + 1] else null
+    }
+
+    /** Переключает закладку у статьи. */
+    fun toggleBookmark(articleId: String) {
+        RssRepository.toggleBookmark(articleId)
+    }
 }

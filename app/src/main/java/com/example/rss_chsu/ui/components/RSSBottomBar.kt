@@ -1,13 +1,17 @@
 package com.example.rss_chsu.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,68 +37,81 @@ fun RSSBottomBar(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // Тонкая черта сверху меню приложения
+        Column(modifier = Modifier.fillMaxWidth()) {
             HorizontalDivider(
                 modifier = Modifier.fillMaxWidth(),
                 thickness = 1.dp,
                 color = DarkPrimary
             )
 
-            // Компактный ряд иконок меню приложения
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 NavTab.entries.forEach { tab ->
-                    val isSelected = currentTab == tab
-                    val color = if (isSelected) DarkPrimary else TextSecondary
-
-                    Column(
-                        modifier = Modifier
-                            .clickable { onTabSelected(tab) }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tab.title,
-                            tint = color,
-                            modifier = Modifier.size(20.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        Text(
-                            text = tab.title,
-                            fontSize = 10.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = color,
-                            maxLines = 1
-                        )
-                    }
+                    NavTabItem(
+                        tab = tab,
+                        selected = currentTab == tab,
+                        onClick = { onTabSelected(tab) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
-            // Тонкая черта снизу меню приложения (отделяет от системного меню телефона)
             HorizontalDivider(
                 modifier = Modifier.fillMaxWidth(),
                 thickness = 1.dp,
                 color = DarkPrimary
             )
 
-            // Системный отступ под кнопки/жесты телефона
             Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsBottomHeight(WindowInsets.navigationBars)
             )
         }
+    }
+}
+
+@Composable
+private fun NavTabItem(
+    tab: NavTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val color = if (selected) DarkPrimary else TextSecondary
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                onClick = onClick
+            )
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = tab.icon,
+            contentDescription = tab.title,
+            tint = color,
+            modifier = Modifier.size(20.dp)
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+            text = tab.title,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = color,
+            maxLines = 1
+        )
     }
 }

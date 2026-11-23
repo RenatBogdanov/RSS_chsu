@@ -1,5 +1,10 @@
 package com.example.rss_chsu.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.paging.LoadState
@@ -38,6 +44,7 @@ import com.example.rss_chsu.ui.model.Folder
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 @Composable
 fun TodayFeedScreen(
@@ -49,15 +56,19 @@ fun TodayFeedScreen(
     feedViewModel: FeedViewModel,
     onArticleClick: (Article) -> Unit,
     onBookmarkClick: (Article) -> Unit,
-    onFilterClick: () -> Unit = {}
+    @Suppress("UNUSED_PARAMETER") onFilterClick: () -> Unit = {}
 ) {
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     var isAscendingSort by remember { mutableStateOf(false) }
     var selectedFolders by remember { mutableStateOf<Set<String>>(emptySet()) }
-    // Для фильтра используем стабильный domain/sourceId, а не имя источника.
     var selectedSources by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFilterSheet by remember { mutableStateOf(false) }
+
+    val showScrollToTop by remember {
+        derivedStateOf { listState.canScrollBackward }
+    }
 
     val filterOptions = remember(totalArticleCount, personalizedArticles.size, unreadArticleCount) {
         listOf(
@@ -67,8 +78,6 @@ fun TodayFeedScreen(
         )
     }
 
-    // Счётчики источников могут обновляться при прочтении статьи. Для фильтра
-    // и подписей используем ключи, зависящие только от неизменяемых name/domain.
     val sourceFolderEntries = remember(sourcesList) {
         sourcesList.map { it.domain to it.folderName }
     }
@@ -86,7 +95,6 @@ fun TodayFeedScreen(
     }
     val folderNames = remember(selectedFolders) { selectedFolders.toList() }
 
-    // Вкладка «Для вас» ранжируется рекомендациями; остальные вкладки читаются из SQLite постранично.
     val pagingFlow = remember(
         selectedFilterIndex,
         isAscendingSort,
@@ -160,122 +168,95 @@ fun TodayFeedScreen(
             pagedArticles.itemCount > 0
         }
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 120.dp)
-        ) {
-            item(key = "feed_controls") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 160.dp)
+            ) {
+                item(key = "feed_controls") {
                     Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .background(ChipUnselected, RoundedCornerShape(14.dp))
-                            .height(40.dp)
-                            .padding(4.dp),
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        filterOptions.forEachIndexed { index, optionText ->
-                            val isSelected = selectedFilterIndex == index
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
-                                    .clickable { selectedFilterIndex = index },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = optionText,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) TextPrimary else TextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(ChipUnselected, RoundedCornerShape(14.dp))
+                                .height(40.dp)
+                                .padding(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            filterOptions.forEachIndexed { index, optionText ->
+                                val isSelected = selectedFilterIndex == index
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
+                                        .clickable { selectedFilterIndex = index },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = optionText,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) TextPrimary else TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if (!hasVisibleItems && refreshState is LoadState.Error) {
-                item(key = "feed_refresh_error") {
-                    TextButton(
-                        onClick = { pagedArticles.retry() },
-                        modifier = Modifier.fillMaxWidth().padding(24.dp)
-                    ) { Text("Не удалось загрузить ленту. Повторить", color = DarkPrimary) }
-                }
-            } else if (!hasVisibleItems && refreshState is LoadState.NotLoading) {
-                item(key = "feed_empty_state") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 260.dp)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if (totalArticleCount == 0) "Лента пока пуста" else "Нет публикаций по выбранным условиям",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (totalArticleCount == 0)
-                                    "Перейдите во вкладку «Подписки», чтобы добавить RSS-источник."
-                                else
-                                    "Измените фильтр или выберите другую вкладку.",
-                                fontSize = 14.sp,
-                                color = TextSecondary,
-                                textAlign = TextAlign.Center
-                            )
+                if (!hasVisibleItems && refreshState is LoadState.Error) {
+                    item(key = "feed_refresh_error") {
+                        TextButton(
+                            onClick = { pagedArticles.retry() },
+                            modifier = Modifier.fillMaxWidth().padding(24.dp)
+                        ) { Text("Не удалось загрузить ленту. Повторить", color = DarkPrimary) }
+                    }
+                } else if (!hasVisibleItems && refreshState is LoadState.NotLoading) {
+                    item(key = "feed_empty_state") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 260.dp)
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = if (totalArticleCount == 0) "Лента пока пуста" else "Нет публикаций по выбранным условиям",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = if (totalArticleCount == 0)
+                                        "Перейдите во вкладку «Подписки», чтобы добавить RSS-источник."
+                                    else
+                                        "Измените фильтр или выберите другую вкладку.",
+                                    fontSize = 14.sp,
+                                    color = TextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
-                }
-            } else if (selectedFilterIndex == 1) {
-                itemsIndexed(
-                    filteredPersonalized,
-                    key = { _, article -> "personalized_${article.id}" },
-                    contentType = { _, _ -> "article" }
-                ) { index, article ->
-                    if (index == 0) {
-                        FeaturedArticleCard(
-                            article = article.copy(isFeatured = true),
-                            onClick = { onArticleClick(article) },
-                            onBookmarkClick = { onBookmarkClick(article) },
-                            sourceNameIndex = sourceNameIndex
-                        )
-                    } else {
-                        FeedArticleRow(
-                            article = article,
-                            sourceNameIndex = sourceNameIndex,
-                            onClick = { onArticleClick(article) }
-                        )
-                    }
-                }
-                if (filteredPersonalized.isNotEmpty()) {
-                    item(key = "personalized_end") { EndOfFeedIndicator() }
-                }
-            } else {
-                items(
-                    count = pagedArticles.itemCount,
-                    key = pagedArticles.itemKey { it.id },
-                    contentType = pagedArticles.itemContentType { "article" }
-                ) { index ->
-                    // ArticleListItem уже преобразован в Article на Dispatchers.Default
-                    // внутри ArticlePagingRepository. Здесь не форматируем дату и не создаём модель.
-                    val article = pagedArticles[index]
-                    if (article != null) {
+                } else if (selectedFilterIndex == 1) {
+                    itemsIndexed(
+                        filteredPersonalized,
+                        key = { _, article -> "personalized_${article.id}" },
+                        contentType = { _, _ -> "article" }
+                    ) { index, article ->
                         if (index == 0) {
                             FeaturedArticleCard(
                                 article = article.copy(isFeatured = true),
@@ -291,31 +272,67 @@ fun TodayFeedScreen(
                             )
                         }
                     }
-                }
-
-                if (pagedArticles.loadState.append is LoadState.Loading) {
-                    item(key = "paging_append_loading") {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = DarkPrimary)
+                    if (filteredPersonalized.isNotEmpty()) {
+                        item(key = "personalized_end") { EndOfFeedIndicator() }
+                    }
+                } else {
+                    items(
+                        count = pagedArticles.itemCount,
+                        key = pagedArticles.itemKey { it.id },
+                        contentType = pagedArticles.itemContentType { "article" }
+                    ) { index ->
+                        val article = pagedArticles[index]
+                        if (article != null) {
+                            if (index == 0) {
+                                FeaturedArticleCard(
+                                    article = article.copy(isFeatured = true),
+                                    onClick = { onArticleClick(article) },
+                                    onBookmarkClick = { onBookmarkClick(article) },
+                                    sourceNameIndex = sourceNameIndex
+                                )
+                            } else {
+                                FeedArticleRow(
+                                    article = article,
+                                    sourceNameIndex = sourceNameIndex,
+                                    onClick = { onArticleClick(article) }
+                                )
+                            }
                         }
                     }
-                }
-                if (pagedArticles.loadState.append is LoadState.Error) {
-                    item(key = "paging_append_error") {
-                        TextButton(
-                            onClick = { pagedArticles.retry() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("Не удалось загрузить. Повторить", color = DarkPrimary) }
+
+                    if (pagedArticles.loadState.append is LoadState.Loading) {
+                        item(key = "paging_append_loading") {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = DarkPrimary)
+                            }
+                        }
+                    }
+                    if (pagedArticles.loadState.append is LoadState.Error) {
+                        item(key = "paging_append_error") {
+                            TextButton(
+                                onClick = { pagedArticles.retry() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Не удалось загрузить. Повторить", color = DarkPrimary) }
+                        }
+                    }
+                    val appendState = pagedArticles.loadState.append
+                    if (pagedArticles.itemCount > 0 && appendState is LoadState.NotLoading && appendState.endOfPaginationReached) {
+                        item(key = "end_of_list_indicator") { EndOfFeedIndicator() }
                     }
                 }
-                val appendState = pagedArticles.loadState.append
-                if (pagedArticles.itemCount > 0 && appendState is LoadState.NotLoading && appendState.endOfPaginationReached) {
-                    item(key = "end_of_list_indicator") { EndOfFeedIndicator() }
-                }
             }
+
+            ScrollToTopFab(
+                visible = showScrollToTop,
+                onClick = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(0)
+                    }
+                }
+            )
         }
 
         if (showFilterSheet) {
@@ -429,6 +446,33 @@ fun TodayFeedScreen(
 }
 
 @Composable
+private fun BoxScope.ScrollToTopFab(
+    visible: Boolean,
+    onClick: () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 16.dp, bottom = 16.dp),
+        enter = fadeIn() + scaleIn(initialScale = 0.8f),
+        exit = fadeOut() + scaleOut(targetScale = 0.8f)
+    ) {
+        SmallFloatingActionButton(
+            onClick = onClick,
+            containerColor = DarkPrimary,
+            contentColor = Color.White
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Наверх",
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun EndOfFeedIndicator() {
     Column(
         modifier = Modifier
@@ -478,9 +522,9 @@ fun FilterChipPill(
     }
 }
 
+@Suppress("unused")
 fun cleanSourceName(rawName: String, sourcesList: List<Source> = emptyList()): String =
     SourceNameResolver.clean(rawName, SourceNameResolver.indexFor(sourcesList))
-
 
 @Composable
 fun FeaturedArticleCard(

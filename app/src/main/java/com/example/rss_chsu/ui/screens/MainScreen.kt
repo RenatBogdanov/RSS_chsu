@@ -10,8 +10,6 @@ import com.example.rss_chsu.ui.components.NavTab
 import com.example.rss_chsu.ui.components.RSSBottomBar
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
-import com.example.rss_chsu.ui.model.RssRepository
-import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -19,25 +17,18 @@ fun MainScreen(
     feedViewModel: FeedViewModel = viewModel()
 ) {
     var currentTab by remember { mutableStateOf(NavTab.TODAY) }
-    var selectedArticle by remember { mutableStateOf<Article?>(null) }
+    var selectedArticleId by remember { mutableStateOf<String?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
-    // Полный текст читаем отдельно и только для открытой статьи: в списках он обрезан.
-    // Этот же поток обновляется при смене закладки и статуса «прочитано».
-    // Подписки на весь список статей здесь больше нет, поэтому MainScreen не перерисовывается при каждом его изменении.
-    val articleFlow = remember(selectedArticle?.id) {
-        val id = selectedArticle?.id
-        if (id == null) flowOf<Article?>(null) else RssRepository.observeArticle(id)
-    }
-    val loadedArticle by articleFlow.collectAsState(initial = selectedArticle)
+    val articles by feedViewModel.articles.collectAsState()
 
-    // loadedArticle может на мгновение остаться от предыдущей статьи, поэтому сверяем id
-    val openedArticle = selectedArticle?.let { selected ->
-        loadedArticle?.takeIf { it.id == selected.id } ?: selected
+    LaunchedEffect(articles, selectedArticleId) {
+        val id = selectedArticleId ?: return@LaunchedEffect
+        if (articles.none { it.id == id }) selectedArticleId = null
     }
 
-    LaunchedEffect(selectedArticle?.id) {
-        selectedArticle?.id?.let { feedViewModel.onArticleRead(it) }
+    LaunchedEffect(selectedArticleId) {
+        selectedArticleId?.let { feedViewModel.onArticleRead(it) }
     }
 
     Surface(
@@ -61,7 +52,7 @@ fun MainScreen(
                     when (currentTab) {
                         NavTab.TODAY -> FeedScreen(
                             onMenuClick = { showSettingsSheet = true },
-                            onNavClick = { article -> selectedArticle = article }
+                            onNavClick = { article -> selectedArticleId = article.id }
                         )
                         NavTab.SUBSCRIPTIONS -> SubscriptionsScreen(
                             onAddSourceClick = { currentTab = NavTab.SEARCH },
@@ -69,7 +60,7 @@ fun MainScreen(
                         )
                         NavTab.SEARCH -> SearchSourcesScreen()
                         NavTab.SAVED -> SavedArticlesScreen(
-                            onArticleClick = { selectedArticle = it },
+                            onArticleClick = { selectedArticleId = it.id },
                             onMenuClick = { showSettingsSheet = true }
                         )
                         NavTab.PROFILE -> Box(
@@ -82,17 +73,22 @@ fun MainScreen(
                 }
             }
 
-            if (openedArticle != null) {
-                BackHandler {
-                    selectedArticle = null
-                }
+            if (selectedArticleId != null) {
+                BackHandler { selectedArticleId = null }
 
-                ArticleReaderScreen(
-                    article = openedArticle,
-                    onBackClick = { selectedArticle = null },
-                    onBookmarkClick = { feedViewModel.onBookmarkClick(openedArticle.id) },
-                    onReadToggle = { feedViewModel.onReadToggle(openedArticle.id) }
-                )
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ArticleReaderScreen(
+                        articles = articles,
+                        initialArticleId = selectedArticleId,
+                        onClose = { selectedArticleId = null },
+                        onArticleChanged = { newId -> selectedArticleId = newId },
+                        onBookmarkClick = { id -> feedViewModel.toggleBookmark(id) },
+                        onReadArticle = { id -> feedViewModel.onArticleRead(id) }
+                    )
+                }
             }
         }
 
