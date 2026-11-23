@@ -17,6 +17,7 @@ import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
+import com.example.rss_chsu.data.local.SourceNameIndex
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
@@ -35,9 +36,10 @@ fun SavedArticlesScreen(
     val sourceNameEntries = remember(sourcesList) {
         sourcesList.map { it.name to it.domain }
     }
-    val sourceNameIndex = remember(sourceNameEntries) {
-        SourceNameResolver.indexForEntries(sourceNameEntries)
+    val sourceNameIndex: SourceNameIndex = remember(sourceNameEntries) {
+        SourceNameIndex(SourceNameResolver.indexForEntries(sourceNameEntries))
     }
+
 
     Column(
         modifier = Modifier

@@ -1,10 +1,10 @@
-
 package com.example.rss_chsu.ui.model
 
 import android.content.Context
 import com.example.rss_chsu.data.local.AppDatabase
 import com.example.rss_chsu.data.local.ArticleDao
 import com.example.rss_chsu.data.local.ArticlePagingRepository
+import com.example.rss_chsu.data.local.ArticleStatus
 import com.example.rss_chsu.data.local.FolderEntity
 import com.example.rss_chsu.data.local.SourceCount
 import com.example.rss_chsu.data.local.SourceDao
@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.URI
 import java.nio.charset.Charset
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 
 /** Лимиты кэша. Закладки в лимиты не входят и никогда не удаляются автоматически. */
@@ -66,6 +67,7 @@ object RssRepository {
 
     private lateinit var dao: ArticleDao
     private lateinit var sourceDao: SourceDao
+    private lateinit var database: AppDatabase
 
     @Volatile
     private var initialized = false
@@ -73,6 +75,15 @@ object RssRepository {
     // Публичные типы сохранены для совместимости со старыми экранами.
     private val _articles = MutableStateFlow<List<Article>>(emptyList())
     val articles: StateFlow<List<Article>> = _articles.asStateFlow()
+
+    /**
+     * Легковесные статусы (id -> isBookmarked/isRead), отдельно от индекса статей.
+     * Индекс articles НЕ содержит статусов (см. ArticleDao.observeIndex), поэтому
+     * изменение статуса не триггерит пересборку RecommendationEngine и не ремапит
+     * 500 Article. UI накладывает статус поверх статьи при отрисовке.
+     */
+    private val _articleStatuses = MutableStateFlow<Map<String, ArticleStatus>>(emptyMap())
+    val articleStatuses: StateFlow<Map<String, ArticleStatus>> = _articleStatuses.asStateFlow()
 
     /** Объём данных статей, сохранённых в локальном кэше (в байтах). */
     private val _cacheSizeBytes = MutableStateFlow(0L)
@@ -107,13 +118,12 @@ object RssRepository {
         if (initialized) return
 
         val db = AppDatabase.get(context.applicationContext)
+        database = db
 
         // 1. Получаем DAO базы данных.
         dao = db.articleDao()
 
         // 2. ОБЯЗАТЕЛЬНО инициализируем Paging Repository.
-        // Без этого вызова FeedViewModel может упасть
-        // с IllegalStateException при создании.
         ArticlePagingRepository.init(dao)
 
         // 3. Получаем DAO источников.
@@ -123,34 +133,39 @@ object RssRepository {
         initialized = true
 
         // -----------------------------------------------------
-        // Основной список статей
+        // Основной список статей (без статусов)
         // -----------------------------------------------------
 
         scope.launch {
             dao.observeIndex()
-                .map { list ->
-                    list.mapIndexed { index, entity ->
-                        entity.toArticle().copy(
-                            isFeatured = index == 0
-                        )
-                    }
-                }
+                .map { list -> list.map { entity -> entity.toArticle(isFeatured = false) } }
                 .flowOn(Dispatchers.Default)
                 .collect { articles ->
+                    // StateFlow сам сконфлитит эмит, если newList == oldList
+                    // (Article — data class, keywords — List<String>, поэлементное сравнение).
+                    // Внешний distinctUntilChanged() был лишним CPU-сканом на 500 статей.
                     _articles.value = articles
                 }
         }
 
         // -----------------------------------------------------
-        // Размер кэша
+        // Статусы (id -> isBookmarked/isRead) — лёгкий поток
         // -----------------------------------------------------
 
         scope.launch {
-            dao.observeCacheSizeBytes()
-                .collect { size ->
-                    _cacheSizeBytes.value = size
+            dao.observeStatuses()
+                .map { list -> list.associateBy { it.id } }
+                .flowOn(Dispatchers.Default)
+                .collect { statuses ->
+                    _articleStatuses.value = statuses
                 }
         }
+
+        // -----------------------------------------------------
+        // Размер кэша — по требованию, а не на каждое изменение
+        // -----------------------------------------------------
+
+        refreshCacheSize()
 
         // -----------------------------------------------------
         // Источники, точные счётчики и папки
@@ -166,16 +181,11 @@ object RssRepository {
                 counts: List<SourceCount>,
                 folderRows: List<FolderEntity> ->
 
-                // Сопоставление статистики по sourceId.
                 val countBySource: Map<String, SourceCount> =
-                    counts.associateBy { count ->
-                        count.sourceId
-                    }
+                    counts.associateBy { count -> count.sourceId }
 
                 val sources: List<Source> = sourceRows.map { row ->
-
                     val count = countBySource[row.domain]
-
                     val total = count?.total ?: 0
                     val unread = count?.unread ?: 0
 
@@ -194,11 +204,7 @@ object RssRepository {
                 }
 
                 val folders: List<Folder> = folderRows.map { folder ->
-
-                    val inFolder = sources.filter { source ->
-                        source.folderName == folder.name
-                    }
-
+                    val inFolder = sources.filter { source -> source.folderName == folder.name }
                     Folder(
                         id = folder.id,
                         name = folder.name,
@@ -209,12 +215,10 @@ object RssRepository {
                     )
                 }
 
-                // Возвращаем обе коллекции.
                 sources to folders
             }
                 .flowOn(Dispatchers.Default)
                 .collect { (sources, folders) ->
-
                     _sources.value = sources
                     _folders.value = folders
                 }
@@ -244,6 +248,29 @@ object RssRepository {
         }
     }
 
+    /**
+     * Обновляет размер кэша через PRAGMA (без скана content). Вызывается редко:
+     * при старте и после операций, реально меняющих размер БД (insert / enforce).
+     */
+    private fun refreshCacheSize() {
+        scope.launch {
+            try {
+                val db = database.openHelper.readableDatabase
+                var pages = 0L
+                db.query("PRAGMA page_count").use { c ->
+                    if (c.moveToFirst()) pages = c.getLong(0)
+                }
+                var pageSize = 0L
+                db.query("PRAGMA page_size").use { c ->
+                    if (c.moveToFirst()) pageSize = c.getLong(0)
+                }
+                _cacheSizeBytes.value = pages * pageSize
+            } catch (_: Throwable) {
+                // PRAGMA может быть недоступен в закрытом состоянии БД — молча пропускаем.
+            }
+        }
+    }
+
     // ---------------------------------------------------------
     // Обновление RSS
     // ---------------------------------------------------------
@@ -258,7 +285,9 @@ object RssRepository {
                 return@withContext false
             }
 
-            var hasNewData = false
+            // AtomicBoolean вместо var: fetchBlock пишет из нескольких async(IO),
+            // без атомарности терялись записи -> enforceCacheLimit не вызывался.
+            val hasNewData = AtomicBoolean(false)
 
             val fetchBlock: suspend CoroutineScope.() -> Unit = {
                 currentSources.map { source ->
@@ -282,7 +311,7 @@ object RssRepository {
                                         article.copy(sourceId = source.domain)
                                     }
                                 )
-                                hasNewData = true
+                                hasNewData.set(true)
                             }
                         } catch (_: Throwable) {
                         }
@@ -298,11 +327,11 @@ object RssRepository {
                 }
             }
 
-            if (hasNewData) {
+            if (hasNewData.get()) {
                 scope.launch { enforceCacheLimit() }
             }
 
-            hasNewData
+            hasNewData.get()
         }
 
     fun syncWithBackend() {
@@ -356,7 +385,6 @@ object RssRepository {
         if (candidates.isEmpty()) return
 
         // Проверяем, какие статьи уже существуют.
-        // Не пересоздаём сущности и не перезаписываем закладки.
         val existingIds = HashSet<String>()
 
         candidates
@@ -400,6 +428,7 @@ object RssRepository {
         val policy = cachePolicy
         dao.deleteOlderThan(System.currentTimeMillis() - policy.maxAgeMillis)
         dao.deleteOverLimit(policy.maxArticles)
+        refreshCacheSize()
     }
 
     // ---------------------------------------------------------
@@ -476,26 +505,25 @@ object RssRepository {
         try {
             fetchSemaphore.withPermit {
 
-                val response =
-                    KtorClient.httpClient.get(cleanUrl)
-
+                val response = KtorClient.httpClient.get(cleanUrl)
                 val bytes = response.readBytes()
                 val xmlText = decodeXmlBytes(bytes)
 
                 var finalXmlText = xmlText
                 var finalCleanUrl = cleanUrl
 
-                // Первоначально загружаем только 30 публикаций.
-                var (source, newArticles) =
+                // Парсим ОДИН раз до 500 элементов; первые 30 сохраняем сразу,
+                // остальное — в фоне. Раньше было два полных прохода парсера.
+                var (source, allArticles) =
                     RssParser.parseRss(
                         xmlText,
                         cleanUrl,
-                        maxItemsToParse = 30
+                        maxItemsToParse = 500
                     )
 
                 // Автоматический поиск RSS внутри HTML-страницы.
                 if (
-                    newArticles.isEmpty() &&
+                    allArticles.isEmpty() &&
                     (
                             xmlText.contains("<html", ignoreCase = true) ||
                                     xmlText.contains("<!DOCTYPE", ignoreCase = true)
@@ -518,55 +546,42 @@ object RssRepository {
 
                         if (discoveredUrl.startsWith("/")) {
                             val baseUri = URI(cleanUrl)
-
-                            discoveredUrl =
-                                "${baseUri.scheme}://${baseUri.host}$discoveredUrl"
-
+                            discoveredUrl = "${baseUri.scheme}://${baseUri.host}$discoveredUrl"
                         } else if (
                             !discoveredUrl.startsWith("http://") &&
                             !discoveredUrl.startsWith("https://")
                         ) {
                             val baseUri = URI(cleanUrl)
-
-                            discoveredUrl =
-                                "${baseUri.scheme}://${baseUri.host}/$discoveredUrl"
+                            discoveredUrl = "${baseUri.scheme}://${baseUri.host}/$discoveredUrl"
                         }
 
-                        val discoveredResponse =
-                            KtorClient.httpClient.get(discoveredUrl)
-
-                        val discoveredBytes =
-                            discoveredResponse.readBytes()
-
-                        val discoveredXml =
-                            decodeXmlBytes(discoveredBytes)
+                        val discoveredResponse = KtorClient.httpClient.get(discoveredUrl)
+                        val discoveredBytes = discoveredResponse.readBytes()
+                        val discoveredXml = decodeXmlBytes(discoveredBytes)
 
                         val (discoveredSource, discoveredArticles) =
                             RssParser.parseRss(
                                 discoveredXml,
                                 discoveredUrl,
-                                maxItemsToParse = 30
+                                maxItemsToParse = 500
                             )
 
                         if (discoveredArticles.isNotEmpty()) {
                             source = discoveredSource
-                            newArticles = discoveredArticles
+                            allArticles = discoveredArticles
                             finalXmlText = discoveredXml
                             finalCleanUrl = discoveredUrl
                         }
                     }
                 }
 
-                if (newArticles.isEmpty()) {
+                if (allArticles.isEmpty()) {
                     return@withContext false
                 }
 
                 // Ищем источник в популярном каталоге.
                 val knownSource = PopularSources.topFeeds.find {
-                    it.domain.equals(
-                        finalCleanUrl,
-                        ignoreCase = true
-                    ) ||
+                    it.domain.equals(finalCleanUrl, ignoreCase = true) ||
                             (
                                     extractDomainKeywords(it.domain).isNotEmpty() &&
                                             extractDomainKeywords(it.domain) ==
@@ -584,23 +599,11 @@ object RssRepository {
                                 it.domain == finalCleanUrl
                     }
 
-                val storedDomain =
-                    if (existing != null) {
-                        finalCleanUrl
-                    } else {
-                        displaySource.domain
-                    }
+                val storedDomain = if (existing != null) finalCleanUrl else displaySource.domain
 
                 // При изменении адреса переносим сохранённые статьи.
-                if (
-                    existing != null &&
-                    existing.domain != storedDomain
-                ) {
-                    dao.reassignArticles(
-                        existing.domain,
-                        storedDomain
-                    )
-
+                if (existing != null && existing.domain != storedDomain) {
+                    dao.reassignArticles(existing.domain, storedDomain)
                     sourceDao.deleteSource(existing.domain)
                 }
 
@@ -612,36 +615,26 @@ object RssRepository {
                         description = displaySource.description,
                         logoText = displaySource.logoText,
                         folderName = targetFolder ?: existing?.folderName,
-                        addedAt = existing?.addedAt
-                            ?: System.currentTimeMillis()
+                        addedAt = existing?.addedAt ?: System.currentTimeMillis()
                     )
                 )
 
                 // Сохраняем первые 30 статей.
+                val first30 = allArticles.take(30)
+                val rest = allArticles.drop(30)
+
                 saveArticles(
-                    newArticles.map { article ->
-                        article.copy(sourceId = storedDomain)
-                    }
+                    first30.map { article -> article.copy(sourceId = storedDomain) }
                 )
 
-                // Догружаем оставшиеся статьи в фоне.
-                scope.launch(Dispatchers.Default) {
-                    fetchSemaphore.withPermit {
-
-                        val (_, restArticles) =
-                            RssParser.parseRss(
-                                finalXmlText,
-                                finalCleanUrl,
-                                maxItemsToParse = 470,
-                                skipItems = 30
-                            )
-
-                        if (restArticles.isNotEmpty()) {
+                // Догружаем оставшиеся в фоне.
+                if (rest.isNotEmpty()) {
+                    scope.launch(Dispatchers.Default) {
+                        try {
                             saveArticles(
-                                restArticles.map { article ->
-                                    article.copy(sourceId = storedDomain)
-                                }
+                                rest.map { article -> article.copy(sourceId = storedDomain) }
                             )
+                        } catch (_: Throwable) {
                         }
                     }
                 }
@@ -658,10 +651,6 @@ object RssRepository {
     // Предварительная загрузка профилей источников
     // ---------------------------------------------------------
 
-    /**
-     * Загружает 15 статей из источника каталога,
-     * извлекает ключевые слова и сохраняет профиль.
-     */
     suspend fun loadSourcePreviews(
         candidates: List<Source>,
         maxFetch: Int = 12
@@ -679,46 +668,29 @@ object RssRepository {
         val queue = candidates
             .filter { it.domain !in subscribed }
             .filter { candidate ->
-
                 val profile = cached[candidate.domain]
-
                 val ttl =
-                    if (
-                        profile == null ||
-                        profile.keywords.isEmpty()
-                    ) {
-                        PROFILE_RETRY_MILLIS
-                    } else {
-                        PROFILE_TTL_MILLIS
-                    }
-
-                profile == null ||
-                        now - profile.updatedAt > ttl
+                    if (profile == null || profile.keywords.isEmpty()) PROFILE_RETRY_MILLIS
+                    else PROFILE_TTL_MILLIS
+                profile == null || now - profile.updatedAt > ttl
             }
             .take(maxFetch)
 
+        // Собираем результаты и вставляем ОДНИМ batch-upsert:
+        // раньше цикл давал N инвалидаций observeSourceProfiles подряд (квадратично).
+        val batch = mutableListOf<SourceProfileEntity>()
+
         for (candidate in queue) {
-
             var keywords: List<String> = emptyList()
-
             try {
                 fetchSemaphore.withPermit {
-
-                    val response =
-                        KtorClient.httpClient.get(
-                            normalizeUrl(candidate.domain)
-                        )
-
-                    val xmlText =
-                        decodeXmlBytes(response.readBytes())
-
-                    val (_, items) =
-                        RssParser.parseRss(
-                            xmlText,
-                            candidate.domain,
-                            maxItemsToParse = 15
-                        )
-
+                    val response = KtorClient.httpClient.get(normalizeUrl(candidate.domain))
+                    val xmlText = decodeXmlBytes(response.readBytes())
+                    val (_, items) = RssParser.parseRss(
+                        xmlText,
+                        candidate.domain,
+                        maxItemsToParse = 15
+                    )
                     if (items.size >= 3) {
                         keywords = aggregateKeywords(items)
                     }
@@ -727,13 +699,17 @@ object RssRepository {
                 e.printStackTrace()
             }
 
-            sourceDao.upsertSourceProfile(
+            batch.add(
                 SourceProfileEntity(
                     domain = candidate.domain,
                     keywords = keywords.joinToString(","),
                     updatedAt = now
                 )
             )
+        }
+
+        if (batch.isNotEmpty()) {
+            sourceDao.upsertSourceProfiles(batch)
         }
     }
 
@@ -753,11 +729,7 @@ object RssRepository {
             )
                 .distinct()
                 .forEach { keyword ->
-                    docFrequency.merge(
-                        keyword,
-                        1,
-                        Int::plus
-                    )
+                    docFrequency.merge(keyword, 1, Int::plus)
                 }
         }
 
@@ -785,25 +757,15 @@ object RssRepository {
             RegexOption.IGNORE_CASE
         ).find(asciiHeader)
 
-        val encodingName =
-            match?.groupValues?.get(1) ?: "UTF-8"
+        val encodingName = match?.groupValues?.get(1) ?: "UTF-8"
 
         return try {
-            String(
-                bytes,
-                Charset.forName(encodingName)
-            )
+            String(bytes, Charset.forName(encodingName))
         } catch (_: Exception) {
             try {
-                String(
-                    bytes,
-                    Charset.forName("windows-1251")
-                )
+                String(bytes, Charset.forName("windows-1251"))
             } catch (_: Exception) {
-                String(
-                    bytes,
-                    Charsets.UTF_8
-                )
+                String(bytes, Charsets.UTF_8)
             }
         }
     }
@@ -841,6 +803,7 @@ object RssRepository {
             dao.deleteNonBookmarkedBySource(sourceDomain)
             sourceDao.deleteSource(sourceDomain)
             dao.deleteOrphanUnbookmarkedArticles()
+            refreshCacheSize()
         }
     }
 
@@ -849,10 +812,7 @@ object RssRepository {
         newFolderName: String?
     ) {
         scope.launch {
-            sourceDao.updateSourceFolder(
-                sourceDomain,
-                newFolderName
-            )
+            sourceDao.updateSourceFolder(sourceDomain, newFolderName)
         }
     }
 
@@ -866,6 +826,7 @@ object RssRepository {
             dao.deleteAll()
             sourceDao.deleteAllSources()
             sourceDao.deleteAllFolders()
+            refreshCacheSize()
         }
     }
 

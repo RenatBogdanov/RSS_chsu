@@ -23,7 +23,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,11 +40,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.paging.LoadState
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
-import androidx.paging.compose.itemContentType
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.rss_chsu.data.local.ArticleStatus
+import com.example.rss_chsu.data.local.SourceNameIndex
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.RssRepository
@@ -76,6 +78,8 @@ fun TodayFeedScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
 
+    val articleStatuses by feedViewModel.articleStatuses.collectAsState()
+
     val filterOptions = remember(totalArticleCount, personalizedArticles.size, unreadArticleCount) {
         listOf(
             "Все ($totalArticleCount)",
@@ -84,10 +88,22 @@ fun TodayFeedScreen(
         )
     }
 
-    val sourceFolderEntries = remember(sourcesList) { sourcesList.map { it.domain to it.folderName } }
-    val sourceFolderByDomain = remember(sourceFolderEntries) { sourceFolderEntries.toMap() }
-    val sourceNameEntries = remember(sourcesList) { sourcesList.map { it.name to it.domain } }
-    val sourceNameIndex = remember(sourceNameEntries) { SourceNameResolver.indexForEntries(sourceNameEntries) }
+    // Стабильные проекции источников:
+    //  1) sourcesList меняется на каждый UPDATE unreadCount (markAsRead инвалидирует
+    //     observeSourceCounts -> combine пересобирает Source). remember(sourcesList)
+    //     перезапускался бы на каждом тапе и создавал новый Map/List.
+    //  2) Вместо этого запоминаем ПАРЫ (name->domain, domain->folderName). remember по
+    //     списку пар сравнивает их структурно (Pair.equals); если имена/папки не менялись —
+    //     остаётся тот же объект. Так sourceNameIndex/sourceFolderByDomain стабильны,
+    //     а filteredPersonalized не пересчитывается на каждый тап «прочитано».
+    val sourceNamePairs = remember(sourcesList) { sourcesList.map { it.name to it.domain } }
+    val sourceNameIndex = remember(sourceNamePairs) {
+        SourceNameIndex(SourceNameResolver.indexForEntries(sourceNamePairs))
+    }
+
+    val sourceFolderPairs = remember(sourcesList) { sourcesList.map { it.domain to it.folderName } }
+    val sourceFolderByDomain = remember(sourceFolderPairs) { sourceFolderPairs.toMap() }
+
     val selectedSourceDomains = remember(selectedSources) { selectedSources.toList() }
     val folderNames = remember(selectedFolders) { selectedFolders.toList() }
 
@@ -175,12 +191,14 @@ fun TodayFeedScreen(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = !showFilterSheet,
-            beyondViewportPageCount = 1
+            userScrollEnabled = !showFilterSheet
+            // beyondViewportPageCount: дефолт 0. Раньше было 1 — три FeedPage жили
+            // одновременно: три LazyColumn, три collectAsLazyPagingItems, три LazyListState.
         ) { page ->
             FeedPage(
                 pageIndex = page,
                 filteredPersonalized = filteredPersonalized,
+                articleStatuses = articleStatuses,
                 isAscendingSort = isAscendingSort,
                 selectedSourceDomains = selectedSourceDomains,
                 folderNames = folderNames,
@@ -314,29 +332,33 @@ private fun CustomTabRow(
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BoxWithConstraints(
+        // Ширина измеряется через onSizeChanged: Dp.toPx() внутри BoxWithConstraints
+        // не резолвится (там нет неявного Density), а tabWidthPx в пикселях сразу
+        // годится для graphicsLayer без конверсий.
+        var rowWidthPx by remember { mutableStateOf(0) }
+        val tabWidthPx = if (filterOptions.isEmpty()) 0f else rowWidthPx.toFloat() / filterOptions.size
+        val tabWidthDp = with(LocalDensity.current) { tabWidthPx.toDp() }
+        val currentPage = pagerState.currentPage
+
+        Box(
             modifier = Modifier
                 .weight(1f)
+                .onSizeChanged { rowWidthPx = it.width }
                 .background(ChipUnselected, RoundedCornerShape(14.dp))
                 .height(40.dp)
                 .padding(4.dp)
         ) {
-            // Явно берём maxWidth, чтобы линтер видел использование scope
-            val tabWidth = maxWidth / filterOptions.size
-            val currentPage = pagerState.currentPage
-
-            val targetOffset = remember(pagerState) {
-                derivedStateOf {
-                    tabWidth * (pagerState.currentPage + pagerState.currentPageOffsetFraction)
-                }
-            }
-
+            // Смещение читаем ВНУТРИ graphicsLayer: лямбда исполняется на стадии Draw в
+            // Render-потоке. Наружу (в derivedStateOf + .value) выносить нельзя — это
+            // заставляло бы рекомпозицию всего TabRow на каждый из 120 скролл-кадров в секунду,
+            // а анимация ползунка шла бы вразнобой со свайпом.
             Box(
                 modifier = Modifier
-                    .width(tabWidth)
+                    .width(tabWidthDp)
                     .fillMaxHeight()
                     .graphicsLayer {
-                        translationX = targetOffset.value.toPx()
+                        translationX = tabWidthPx *
+                                (pagerState.currentPage + pagerState.currentPageOffsetFraction)
                     }
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surface)
@@ -355,7 +377,9 @@ private fun CustomTabRow(
                         Text(
                             text = optionText,
                             fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            // Фиксированный fontWeisht: Bold шире Medium -> смена веса
+                            // меняла intrinsic width и вызывала layout-прыжки табов.
+                            fontWeight = FontWeight.SemiBold,
                             color = if (isSelected) TextPrimary else TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -371,11 +395,12 @@ private fun CustomTabRow(
 private fun FeedPage(
     pageIndex: Int,
     filteredPersonalized: List<Article>,
+    articleStatuses: Map<String, ArticleStatus>,
     isAscendingSort: Boolean,
     selectedSourceDomains: List<String>,
     folderNames: List<String>,
     feedViewModel: FeedViewModel,
-    sourceNameIndex: Map<String, String>,
+    sourceNameIndex: SourceNameIndex,
     onArticleClick: (Article) -> Unit,
     onBookmarkClick: (Article) -> Unit,
     totalArticleCount: Int,
@@ -383,17 +408,14 @@ private fun FeedPage(
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val showScrollToTop by remember {
-        derivedStateOf { listState.canScrollBackward }
-    }
-    val isNearTop by remember {
-        derivedStateOf { listState.firstVisibleItemIndex <= 1 }
-    }
 
-    LaunchedEffect(isRefreshing) {
-        if (!isRefreshing && isNearTop) {
-            listState.scrollToItem(0)
-        }
+    // showScrollToTop читается только внутри FAB (см. ScrollToTopFab — там лямбда,
+    // а не Boolean). Раньше showScrollToTop читался в теле FeedPage через
+    // derivedStateOf + делегат by — это подписывало ВЕСЬ FeedPage на изменения
+    // canScrollBackward. Плюс был баговый LaunchedEffect(isRefreshing, firstVisibleItem),
+    // который выкидывал пользователя наверх при скролле до 1-2 элемента.
+    val showScrollToTop = remember {
+        derivedStateOf { listState.canScrollBackward }
     }
 
     val pagingFlow = remember(
@@ -403,7 +425,7 @@ private fun FeedPage(
         folderNames
     ) {
         if (pageIndex == 1) {
-            flowOf(PagingData.empty<Article>())
+            flowOf(PagingData.empty())
         } else {
             feedViewModel.pagedArticles(
                 onlyUnread = pageIndex == 2,
@@ -425,14 +447,14 @@ private fun FeedPage(
             contentPadding = PaddingValues(bottom = 160.dp)
         ) {
             if (!hasVisibleItems && refreshState is LoadState.Error) {
-                item(key = "error_$pageIndex") {
+                item(key = "error_$pageIndex", contentType = "error") {
                     TextButton(
                         onClick = { pagedArticles.retry() },
                         modifier = Modifier.fillMaxWidth().padding(24.dp)
                     ) { Text("Не удалось загрузить ленту. Повторить", color = DarkPrimary) }
                 }
             } else if (!hasVisibleItems && refreshState is LoadState.NotLoading) {
-                item(key = "empty_$pageIndex") {
+                item(key = "empty_$pageIndex", contentType = "empty") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -461,12 +483,15 @@ private fun FeedPage(
             } else if (pageIndex == 1) {
                 itemsIndexed(
                     filteredPersonalized,
-                    key = if (isNearTop) null else { _, article -> "personalized_${article.id}" },
+                    key = { _, article -> "personalized_${article.id}" },
                     contentType = { index, _ -> if (index == 0) "featured" else "row" }
                 ) { index, article ->
+                    val status = articleStatuses[article.id]
+                    val effectiveBookmarked = status?.isBookmarked ?: article.isBookmarked
                     if (index == 0) {
                         FeaturedArticleCard(
-                            article = article.copy(isFeatured = true),
+                            article = article,
+                            isBookmarked = effectiveBookmarked,
                             onClick = { onArticleClick(article) },
                             onBookmarkClick = { onBookmarkClick(article) },
                             sourceNameIndex = sourceNameIndex
@@ -480,19 +505,24 @@ private fun FeedPage(
                     }
                 }
                 if (filteredPersonalized.isNotEmpty()) {
-                    item(key = "personalized_end_$pageIndex") { EndOfFeedIndicator() }
+                    item(key = "personalized_end_$pageIndex", contentType = "end") {
+                        EndOfFeedIndicator()
+                    }
                 }
             } else {
                 items(
                     count = pagedArticles.itemCount,
-                    key = if (isNearTop) null else pagedArticles.itemKey { it.id },
+                    key = pagedArticles.itemKey { it.id },
                     contentType = { index -> if (index == 0) "featured" else "row" }
                 ) { index ->
                     val article = pagedArticles[index]
                     if (article != null) {
                         if (index == 0) {
+                            val status = articleStatuses[article.id]
+                            val effectiveBookmarked = status?.isBookmarked ?: article.isBookmarked
                             FeaturedArticleCard(
-                                article = article.copy(isFeatured = true),
+                                article = article,
+                                isBookmarked = effectiveBookmarked,
                                 onClick = { onArticleClick(article) },
                                 onBookmarkClick = { onBookmarkClick(article) },
                                 sourceNameIndex = sourceNameIndex
@@ -508,7 +538,7 @@ private fun FeedPage(
                 }
 
                 if (pagedArticles.loadState.append is LoadState.Loading) {
-                    item(key = "paging_append_loading_$pageIndex") {
+                    item(key = "paging_append_loading_$pageIndex", contentType = "loading") {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(20.dp),
                             contentAlignment = Alignment.Center
@@ -518,7 +548,7 @@ private fun FeedPage(
                     }
                 }
                 if (pagedArticles.loadState.append is LoadState.Error) {
-                    item(key = "paging_append_error_$pageIndex") {
+                    item(key = "paging_append_error_$pageIndex", contentType = "error") {
                         TextButton(
                             onClick = { pagedArticles.retry() },
                             modifier = Modifier.fillMaxWidth()
@@ -527,13 +557,15 @@ private fun FeedPage(
                 }
                 val appendState = pagedArticles.loadState.append
                 if (pagedArticles.itemCount > 0 && appendState is LoadState.NotLoading && appendState.endOfPaginationReached) {
-                    item(key = "end_of_list_indicator_$pageIndex") { EndOfFeedIndicator() }
+                    item(key = "end_of_list_indicator_$pageIndex", contentType = "end") {
+                        EndOfFeedIndicator()
+                    }
                 }
             }
         }
 
         ScrollToTopFab(
-            visible = showScrollToTop,
+            visible = { showScrollToTop.value },
             onClick = {
                 coroutineScope.launch {
                     listState.animateScrollToItem(0)
@@ -545,11 +577,13 @@ private fun FeedPage(
 
 @Composable
 private fun BoxScope.ScrollToTopFab(
-    visible: Boolean,
+    visible: () -> Boolean,
     onClick: () -> Unit
 ) {
+    // visible — лямбда: чтение showScrollToTop.value происходит внутри AnimatedVisibility,
+    // а не в теле FeedPage. При смене canScrollBackward рекомпозируется только FAB.
     AnimatedVisibility(
-        visible = visible,
+        visible = visible(),
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(end = 16.dp, bottom = 16.dp),
@@ -628,9 +662,10 @@ fun cleanSourceName(rawName: String, sourcesList: List<Source> = emptyList()): S
 @Composable
 fun FeaturedArticleCard(
     article: Article,
+    isBookmarked: Boolean,
     onClick: () -> Unit,
     onBookmarkClick: () -> Unit,
-    sourceNameIndex: Map<String, String> = SourceNameResolver.popularIndex()
+    sourceNameIndex: SourceNameIndex = SourceNameIndex()
 ) {
     val context = LocalContext.current
 
@@ -657,12 +692,18 @@ fun FeaturedArticleCard(
                     modifier = Modifier.size(28.dp)
                 )
                 if (article.imageUrl.isNotEmpty()) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
+                    // remember: ImageRequest создаётся один раз на карточку.
+                    // crossfade(100) вместо crossfade(true): 300мс-анимация при recycle
+                    // в LazyColumn при быстром скролле забивает UI-поток.
+                    val imageModel = remember(article.imageUrl) {
+                        ImageRequest.Builder(context)
                             .data(article.imageUrl)
                             .size(600)
-                            .crossfade(true)
-                            .build(),
+                            .crossfade(100)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = imageModel,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -680,7 +721,7 @@ fun FeaturedArticleCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (article.isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
+                        imageVector = if (isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
                         contentDescription = "В закладки",
                         tint = TextPrimary,
                         modifier = Modifier.size(16.dp)
@@ -690,7 +731,7 @@ fun FeaturedArticleCard(
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 val displaySource = remember(article.sourceName, sourceNameIndex) {
-                    SourceNameResolver.clean(article.sourceName, sourceNameIndex)
+                    SourceNameResolver.clean(article.sourceName, sourceNameIndex.map)
                 }
                 Text(
                     text = displaySource,
@@ -738,17 +779,9 @@ fun FeaturedArticleCard(
 @Composable
 fun FeedArticleRow(
     article: Article,
-    sourcesList: List<Source> = emptyList(),
-    onClick: () -> Unit,
-    sourceNameIndex: Map<String, String>? = null
+    sourceNameIndex: SourceNameIndex,
+    onClick: () -> Unit
 ) {
-    val sourceNameEntries = remember(sourcesList) {
-        sourcesList.map { it.name to it.domain }
-    }
-    val fallbackSourceNameIndex = remember(sourceNameEntries) {
-        SourceNameResolver.indexForEntries(sourceNameEntries)
-    }
-    val effectiveSourceNameIndex = sourceNameIndex ?: fallbackSourceNameIndex
     val context = LocalContext.current
 
     Column(
@@ -769,8 +802,8 @@ fun FeedArticleRow(
                 verticalArrangement = Arrangement.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    val displaySource = remember(article.sourceName, effectiveSourceNameIndex) {
-                        SourceNameResolver.clean(article.sourceName, effectiveSourceNameIndex)
+                    val displaySource = remember(article.sourceName, sourceNameIndex) {
+                        SourceNameResolver.clean(article.sourceName, sourceNameIndex.map)
                     }
                     Text(
                         text = displaySource,
@@ -803,12 +836,17 @@ fun FeedArticleRow(
             }
 
             if (article.imageUrl.isNotEmpty()) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
+                // remember: стабильная модель ImageRequest на карточку.
+                // crossfade(100) вместо true — короче анимация, меньше кадров на UI-потоке.
+                val imageModel = remember(article.imageUrl) {
+                    ImageRequest.Builder(context)
                         .data(article.imageUrl)
                         .size(120)
-                        .crossfade(true)
-                        .build(),
+                        .crossfade(100)
+                        .build()
+                }
+                AsyncImage(
+                    model = imageModel,
                     contentDescription = null,
                     modifier = Modifier
                         .size(60.dp)

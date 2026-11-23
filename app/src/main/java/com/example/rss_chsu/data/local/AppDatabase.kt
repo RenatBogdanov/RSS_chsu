@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FolderEntity::class,
         SourceProfileEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -94,6 +94,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Пересобираем индексы articles под реальные запросы ленты:
+         *  — isRead-индекс бесполезен (WHERE (:onlyUnread = 0 OR isRead = 0) — параметр);
+         *  — одиночный sourceId-индекс заменяем на (sourceId, publishedAt, fetchedAt),
+         *    который покрывает pagingFeedNewest/Oldest с фильтром по источнику
+         *    и deleteOverLimitForSource.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_articles_isRead")
+                db.execSQL("DROP INDEX IF EXISTS index_articles_sourceId")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_articles_sourceId_publishedAt_fetchedAt " +
+                            "ON articles(sourceId, publishedAt, fetchedAt)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -101,7 +119,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "rss.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

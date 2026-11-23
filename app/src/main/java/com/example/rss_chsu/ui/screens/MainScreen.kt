@@ -20,6 +20,8 @@ fun MainScreen(
     var selectedArticleId by remember { mutableStateOf<String?>(null) }
 
     val articles by feedViewModel.articles.collectAsState()
+    val articleStatuses by feedViewModel.articleStatuses.collectAsState() // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+
 
     LaunchedEffect(articles, selectedArticleId) {
         val id = selectedArticleId ?: return@LaunchedEffect
@@ -74,6 +76,7 @@ fun MainScreen(
                     ArticleReaderScreen(
                         articles = articles,
                         initialArticleId = selectedArticleId,
+                        articleStatuses = articleStatuses, // <-- ДОБАВИТЬ ЭТУ СТРОКУ
                         onClose = { selectedArticleId = null },
                         onArticleChanged = { newId -> selectedArticleId = newId },
                         onBookmarkClick = { id -> feedViewModel.toggleBookmark(id) },

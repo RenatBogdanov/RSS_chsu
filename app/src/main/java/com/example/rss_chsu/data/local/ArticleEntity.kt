@@ -8,10 +8,15 @@ import com.example.rss_chsu.ui.model.Article
 @Entity(
     tableName = "articles",
     indices = [
+        // Сортировка ленты без фильтров: ORDER BY publishedAt DESC, fetchedAt DESC
         Index(value = ["publishedAt", "fetchedAt"]),
-        Index(value = ["isRead"]),
+        // Счётчик закладок + pagingBookmarks
         Index(value = ["isBookmarked"]),
-        Index(value = ["sourceId"])
+        // Лента с фильтром по источнику: WHERE sourceId IN (...) ORDER BY publishedAt DESC, fetchedAt DESC
+        // Также покрывает deleteOverLimitForSource и observeSourceCounts (префикс sourceId).
+        Index(value = ["sourceId", "publishedAt", "fetchedAt"])
+        // isRead-индекс удалён: WHERE (:onlyUnread = 0 OR isRead = 0) не даёт SQLite
+        // выбрать индекс по параметру :onlyUnread — индекс всё равно не используется.
     ]
 )
 data class ArticleEntity(
@@ -53,7 +58,7 @@ fun ArticleEntity.toArticle(): Article = Article(
     sourceId = sourceId
 )
 
-// Конвертер из UI-модели в БД (из-за отсутствия которого была ошибка)
+// Конвертер из UI-модели в БД
 fun Article.toEntity(fetchedAt: Long): ArticleEntity = ArticleEntity(
     id = id,
     title = title,

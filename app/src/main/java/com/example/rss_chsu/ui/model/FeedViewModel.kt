@@ -6,8 +6,10 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.example.rss_chsu.data.local.ArticleCounts
 import com.example.rss_chsu.data.local.ArticlePagingRepository
+import com.example.rss_chsu.data.local.ArticleStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,18 +21,34 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * distinctUntilChangedBy отсутствует в kotlinx.coroutines.flow. Объявляем локально,
+ * чтобы не тащить отдельную зависимость.
+ */
+private fun <T, K> Flow<T>.distinctUntilChangedBy(
+    keySelector: (T) -> K
+): Flow<T> = distinctUntilChanged { old, new ->
+    keySelector(old) == keySelector(new)
+}
+
 class FeedViewModel : ViewModel() {
 
-    /** Лёгкий индекс статей без полного текста; оставлен для рекомендаций и совместимости экранов. */
+    /** Лёгкий индекс статей без полного текста и без статусов; для рекомендаций. */
     val articles: StateFlow<List<Article>> = RssRepository.articles
+
+    /** Статусы (id -> isBookmarked/isRead) отдельным потоком, без пересборки корпуса. */
+    val articleStatuses: StateFlow<Map<String, ArticleStatus>> = RssRepository.articleStatuses
 
     val articleCounts: StateFlow<ArticleCounts> = ArticlePagingRepository.observeArticleCounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ArticleCounts())
 
-    // Статусы не входят в корпус: изменение прочтения/закладки не заставляет перестраивать IDF и векторы.
+    /**
+     * Корпус для рекомендаций: только id+keywords. Статусы в него не входят,
+     * поэтому TF-IDF пересобирается ТОЛЬКО при реальном изменении корпуса
+     * (новые/удалённые статьи), а не на каждый тап «прочитано».
+     */
     private val recommendationCorpus = articles
-        .map { list -> list.map { it.copy(isRead = false, isBookmarked = false, isFeatured = false) } }
-        .distinctUntilChanged()
+        .distinctUntilChangedBy { list -> list.map { it.id to it.keywords } }
 
     private val recommendationEngine: StateFlow<RecommendationEngine> = recommendationCorpus
         .map(::RecommendationEngine)
@@ -41,15 +59,21 @@ class FeedViewModel : ViewModel() {
             RecommendationEngine(emptyList())
         )
 
-    private val _recommendedArticles = kotlinx.coroutines.flow.MutableStateFlow<List<Article>>(emptyList())
+    private val _recommendedArticles = MutableStateFlow<List<Article>>(emptyList())
     val recommendedArticles: StateFlow<List<Article>> = _recommendedArticles.asStateFlow()
 
+    /**
+     * top-100 пересчитывается только при изменении recommendationEngine (корпуса),
+     * а не при каждом обновлении статусов. `getPersonalized` получает corpus,
+     * не полный articles — это ключевое отличие от прежней реализации.
+     */
     val personalizedArticles: StateFlow<List<Article>> = combine(
         recommendationEngine,
-        articles
-    ) { engine, currentArticles ->
-        engine.getPersonalized(currentArticles, limit = 100)
+        recommendationCorpus
+    ) { engine, corpus ->
+        engine.getPersonalized(corpus, limit = 100)
     }
+        .distinctUntilChangedBy { list -> list.map(Article::id) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -59,6 +83,11 @@ class FeedViewModel : ViewModel() {
         }
     }
 
+    /**
+     * cachedIn(viewModelScope) критичен: при уничтожении FeedPage внутри HorizontalPager
+     * (beyondViewportPageCount) без cachedIn кэш PagingData терялся бы, и свайп на вкладку
+     * и обратно запускал бы полную перезагрузку с page 1.
+     */
     fun pagedArticles(
         onlyUnread: Boolean,
         oldestFirst: Boolean,
@@ -69,10 +98,10 @@ class FeedViewModel : ViewModel() {
         oldestFirst = oldestFirst,
         sourceDomains = sourceDomains,
         folderNames = folderNames
-    )
+    ).cachedIn(viewModelScope)
 
     fun pagedBookmarks(): Flow<PagingData<Article>> =
-        ArticlePagingRepository.pagedBookmarks()
+        ArticlePagingRepository.pagedBookmarks().cachedIn(viewModelScope)
 
     /** Вычисляет похожие статьи при открытии конкретной публикации. */
     fun loadRecommendations(targetArticle: Article) {

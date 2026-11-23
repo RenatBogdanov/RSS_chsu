@@ -10,16 +10,35 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ArticleDao {
 
-    /** Индекс для рекомендаций без поля content: не вытаскиваем тексты всех публикаций. */
+    /**
+     * Индекс для рекомендаций: без поля content и без статусов (isRead/isBookmarked).
+     *
+     * Статусы НЕ включены намеренно: любой UPDATE isRead/isBookmarked инвалидировал бы
+     * этот курсор → Room перечитывал бы все 500 строк → Kotlin заново маппил бы 500
+     * Article (с keywords.split) → recommendationEngine пересобирался бы → каскад
+     * до трёх FeedPage. Для 120 Гц это самый дорогой путь в приложении.
+     *
+     * Статусы для UI берутся отдельным лёгким потоком observeStatuses() (3 колонки).
+     * LIMIT 500 — список нужен только вкладке «Для вас» (топ-100) и подпискам.
+     */
     @Query(
         """
         SELECT id, title, subtitle, sourceName, category, author, pubDateFormatted,
-               readTime, imageUrl, isBookmarked, isRead, publishedAt, keywords, sourceId
+               readTime, imageUrl, publishedAt, keywords, sourceId
         FROM articles
         ORDER BY publishedAt DESC, fetchedAt DESC
+        LIMIT 500
         """
     )
     fun observeIndex(): Flow<List<RecommendationArticleRow>>
+
+    /**
+     * Лёгкий поток статусов: только id + два флага, без текстов и картинок.
+     * Пересчитывается на каждый UPDATE, но это O(rows) по трём колонкам, без скана
+     * content и без пересборки рекомендаций — на порядок дешевле старого observeIndex.
+     */
+    @Query("SELECT id, isBookmarked, isRead FROM articles")
+    fun observeStatuses(): Flow<List<ArticleStatus>>
 
     /** Точные счётчики вычисляет SQLite, а не Compose/Kotlin по всему списку. */
     @Query(
@@ -181,28 +200,8 @@ interface ArticleDao {
     @Query("DELETE FROM articles")
     suspend fun deleteAll(): Int
 
-    /** Приблизительный объём данных статей в байтах. */
-    @Query(
-        """
-        SELECT COALESCE(
-            SUM(
-                LENGTH(CAST(id AS BLOB)) +
-                LENGTH(CAST(title AS BLOB)) +
-                LENGTH(CAST(subtitle AS BLOB)) +
-                LENGTH(CAST(content AS BLOB)) +
-                LENGTH(CAST(sourceName AS BLOB)) +
-                LENGTH(CAST(category AS BLOB)) +
-                LENGTH(CAST(author AS BLOB)) +
-                LENGTH(CAST(pubDateFormatted AS BLOB)) +
-                LENGTH(CAST(readTime AS BLOB)) +
-                LENGTH(CAST(imageUrl AS BLOB)) +
-                LENGTH(CAST(keywords AS BLOB)) +
-                LENGTH(CAST(sourceId AS BLOB))
-            ),
-            0
-        )
-        FROM articles
-        """
-    )
-    fun observeCacheSizeBytes(): Flow<Long>
+    // observeCacheSizeBytes() удалён: SUM(LENGTH(CAST(content AS BLOB))) сканировал content
+    // всей таблицы на каждое изменение (markAsRead, toggleBookmark, insertIgnore) и
+    // выполнялся на том же queryExecutor, что и Paging. Заменён на approxSize через
+    // PRAGMA page_count * page_size в RssRepository.refreshCacheSize().
 }

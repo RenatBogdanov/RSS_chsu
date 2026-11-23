@@ -79,17 +79,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import com.example.rss_chsu.data.local.ArticleStatus
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ArticleReaderScreen(
     articles: List<Article>,
     initialArticleId: String?,
+    articleStatuses: Map<String, ArticleStatus> = emptyMap(), // <-- ДОБАВИТЬ
     onClose: () -> Unit,
     onArticleChanged: (String) -> Unit = {},
     onBookmarkClick: (String) -> Unit = {},
     onReadArticle: (String) -> Unit = {}
 ) {
+
     if (articles.isEmpty()) {
         LaunchedEffect(Unit) { onClose() }
         return
@@ -118,6 +121,8 @@ fun ArticleReaderScreen(
     )
 
     val currentArticle = articles.getOrNull(pagerState.currentPage) ?: articles.first()
+    val isCurrentBookmarked = articleStatuses[currentArticle.id]?.isBookmarked ?: currentArticle.isBookmarked
+
 
     // Сообщаем наверх о смене статьи
     LaunchedEffect(pagerState.currentPage) {
@@ -290,13 +295,13 @@ fun ArticleReaderScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
-                        imageVector = if (currentArticle.isBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
+                        imageVector = if (isCurrentBookmarked) RssIcons.BookmarkFilled else RssIcons.Bookmark,
                         contentDescription = "Сохранено",
                         tint = DarkPrimary,
                         modifier = Modifier.size(19.dp)
                     )
                     Text(
-                        text = if (currentArticle.isBookmarked) "Сохранено" else "Сохранить",
+                        text = if (isCurrentBookmarked) "Сохранено" else "Сохранить",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = DarkPrimary
@@ -399,20 +404,11 @@ private fun ArticlePage(
     showDetails: Boolean
 ) {
     val articleFlow = remember(article.id) { RssRepository.observeArticle(article.id) }
-    val fullArticle by articleFlow.collectAsState(initial = null)
+    val fullArticle by articleFlow.collectAsState(initial = article)
 
-    Crossfade(
-        targetState = fullArticle,
-        animationSpec = tween(220),
-        label = "article_page"
-    ) { loaded ->
-        if (loaded == null) {
-            ArticleSkeleton(article = article, showDetails = showDetails)
-        } else {
-            ArticleContent(article = loaded, showDetails = showDetails)
-        }
-    }
+    ArticleContent(article = fullArticle ?: article, showDetails = showDetails)
 }
+
 
 /** Скелетон: показывает заголовок/метаданные сразу, а тело — плейсхолдерами. */
 @Composable

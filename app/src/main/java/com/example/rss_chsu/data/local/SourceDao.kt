@@ -53,4 +53,8 @@ interface SourceDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSourceProfile(profile: SourceProfileEntity)
+
+    /** Batch-upsert: одна инвалидация observeSourceProfiles вместо N подряд. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSourceProfiles(profiles: List<SourceProfileEntity>)
 }

@@ -1,5 +1,6 @@
 package com.example.rss_chsu.data.local
 
+import androidx.compose.runtime.Immutable
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.RssParser
 
@@ -20,7 +21,14 @@ data class ArticleListItem(
     val sourceId: String
 )
 
-/** Облегчённая проекция для индекса рекомендаций: без полного текста статьи. */
+/**
+ * Облегчённая проекция для индекса рекомендаций: без полного текста статьи.
+ *
+ * Намеренно БЕЗ isBookmarked/isRead — иначе любой UPDATE статуса (markAsRead /
+ * toggleBookmark) инвалидирует курсор observeIndex() и пересобирает 500 Article.
+ * Актуальный статус читается отдельным observeStatuses() (3 колонки) и накладывается
+ * на UI уже в TodayFeedScreen поверх this.
+ */
 data class RecommendationArticleRow(
     val id: String,
     val title: String,
@@ -31,11 +39,16 @@ data class RecommendationArticleRow(
     val pubDateFormatted: String,
     val readTime: String,
     val imageUrl: String,
-    val isBookmarked: Boolean,
-    val isRead: Boolean,
     val publishedAt: Long,
     val keywords: String,
     val sourceId: String
+)
+
+/** Лёгкая проекция статусов: только id + 2 флага. Используется для оверлея в UI. */
+data class ArticleStatus(
+    val id: String,
+    val isBookmarked: Boolean,
+    val isRead: Boolean
 )
 
 /** Агрегаты для подписей вкладок и счётчика закладок. */
@@ -45,6 +58,36 @@ data class ArticleCounts(
     val bookmarks: Int = 0
 )
 
+/**
+ * Стабильная обёртка над Map<String, String> для индекса sourceName -> domain.
+ *
+ * Compose считает Map нестабильным типом — параметр `sourceNameIndex: Map<String, String>`
+ * в карточке не даёт Compose скипнуть рекомпозицию. `@Immutable`-обёртка перебивает
+ * анализ стабильности: Compose доверяет контракту, что объект не мутирует после создания.
+ */
+@Immutable
+data class SourceNameIndex(val map: Map<String, String> = emptyMap())
+
+/**
+ * Кэш относительных дат: форматирование выполняется ОДИН РАЗ при маппинге страницы БД
+ * (вне UI-потока), а не в момент привязки карточки. Без кэша каждое обновление ленты
+ * заново аллоцировало строку даты на каждую статью -> лишние GC-паузы при скролле.
+ * Значение инвалидно через 60 секунд — ровно та гранулярность, что видна пользователю.
+ */
+private const val RELATIVE_DATE_TTL_MILLIS = 60_000L
+private val relativeDateCache = android.util.LruCache<Long, String>(512)
+
+internal fun cachedRelativeDate(millis: Long): String {
+    if (millis <= 0L) return "только что"
+    val bucket = millis / RELATIVE_DATE_TTL_MILLIS
+    val nowBucket = System.currentTimeMillis() / RELATIVE_DATE_TTL_MILLIS
+    relativeDateCache.get(bucket)?.let { return it }
+    val formatted = RssParser.relativeFromMillis(millis)
+    // Не держим даты старше часа: они должны пересчитываться после смены порога.
+    if (nowBucket - bucket <= 60) relativeDateCache.put(bucket, formatted)
+    return formatted
+}
+
 fun ArticleListItem.toArticle(isFeatured: Boolean = false): Article = Article(
     id = id,
     title = title,
@@ -53,7 +96,7 @@ fun ArticleListItem.toArticle(isFeatured: Boolean = false): Article = Article(
     sourceName = sourceName,
     category = category,
     author = author,
-    date = RssParser.relativeFromMillis(publishedAt),
+    date = cachedRelativeDate(publishedAt),
     pubDateFormatted = pubDateFormatted,
     readTime = readTime,
     imageUrl = imageUrl,
@@ -65,7 +108,7 @@ fun ArticleListItem.toArticle(isFeatured: Boolean = false): Article = Article(
     sourceId = sourceId
 )
 
-fun RecommendationArticleRow.toArticle(): Article = Article(
+fun RecommendationArticleRow.toArticle(isFeatured: Boolean = false): Article = Article(
     id = id,
     title = title,
     subtitle = subtitle,
@@ -73,12 +116,15 @@ fun RecommendationArticleRow.toArticle(): Article = Article(
     sourceName = sourceName,
     category = category,
     author = author,
-    date = RssParser.relativeFromMillis(publishedAt),
+    date = cachedRelativeDate(publishedAt),
     pubDateFormatted = pubDateFormatted,
     readTime = readTime,
     imageUrl = imageUrl,
-    isBookmarked = isBookmarked,
-    isRead = isRead,
+    // Статусы в этой проекции не читаются: они накладываются из observeStatuses()
+    // на уровне TodayFeedScreen. Дефолты false — намеренно, это индикатор «неизвестно».
+    isBookmarked = false,
+    isRead = false,
+    isFeatured = isFeatured,
     publishedAt = publishedAt,
     keywords = keywords.split(',').filter(String::isNotBlank),
     sourceId = sourceId
