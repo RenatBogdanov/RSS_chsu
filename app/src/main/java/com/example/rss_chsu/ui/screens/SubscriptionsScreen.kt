@@ -39,8 +39,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 
 @Composable
 fun SubscriptionsScreen(
-    onAddSourceClick: () -> Unit = {},
-    onMenuClick: () -> Unit = {}
+    onAddSourceClick: () -> Unit = {}
 ) {
     val realFolders by RssRepository.folders.collectAsState()
     val realSources by RssRepository.sources.collectAsState()
@@ -69,20 +68,7 @@ fun SubscriptionsScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppLogoBar(
-            title = "ПОДПИСКИ (${realSources.size})",
-            rightAction = {
-                IconButton(
-                    onClick = onMenuClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Меню",
-                        tint = DarkPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
+            title = "ПОДПИСКИ (${realSources.size})"
         )
 
         // Pinned Top Compact Add RSS Bar
@@ -97,23 +83,23 @@ fun SubscriptionsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(start = 10.dp, end = 2.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Help Button "?"
                 IconButton(
                     onClick = { showHelpDialog = true },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(35.dp)
                 ) {
                     Text(
                         text = "?",
-                        fontSize = 15.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkPrimary
                     )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(5.dp))
 
                 // TextField for RSS URL
                 Box(
@@ -123,7 +109,7 @@ fun SubscriptionsScreen(
                     if (rssUrlInput.isEmpty()) {
                         Text(
                             text = "Ссылка на RSS (https://...)",
-                            fontSize = 13.sp,
+                            fontSize = 16.sp,
                             color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -134,14 +120,14 @@ fun SubscriptionsScreen(
                         onValueChange = { rssUrlInput = it },
                         singleLine = true,
                         textStyle = LocalTextStyle.current.copy(
-                            fontSize = 13.sp,
+                            fontSize = 16.sp,
                             color = TextPrimary
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // Plus IconButton in a Circle
                 IconButton(
@@ -159,18 +145,20 @@ fun SubscriptionsScreen(
                                 } else {
                                     addStatusMessage = "Не удалось загрузить RSS."
                                 }
+                                kotlinx.coroutines.delay(2500)
+                                addStatusMessage = null
                             }
                         }
                     },
                     enabled = !isAddingFeed && rssUrlInput.isNotBlank(),
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(35.dp)
                         .clip(CircleShape)
                         .background(if (rssUrlInput.isNotBlank()) DarkPrimary else ChipUnselected)
                 ) {
                     if (isAddingFeed) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(18.dp),
                             color = Color.White,
                             strokeWidth = 2.dp
                         )
@@ -179,7 +167,7 @@ fun SubscriptionsScreen(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Добавить",
                             tint = if (rssUrlInput.isNotBlank()) Color.White else TextSecondary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -563,21 +551,23 @@ fun SubscriptionsScreen(
                             LazyColumn(
                                 modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
                             ) {
-                                item {
-                                    Text(
-                                        text = "Без папки",
-                                        fontSize = 16.sp,
-                                        color = TextPrimary,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                RssRepository.updateSourceFolder(sourceToMove!!.domain, null)
-                                                sourceToMove = null
-                                            }
-                                            .padding(vertical = 12.dp, horizontal = 8.dp)
-                                    )
+                                if (sourceToMove?.folderName != null) {
+                                    item {
+                                        Text(
+                                            text = "Без папки",
+                                            fontSize = 16.sp,
+                                            color = TextPrimary,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    RssRepository.updateSourceFolder(sourceToMove!!.domain, null)
+                                                    sourceToMove = null
+                                                }
+                                                .padding(vertical = 12.dp, horizontal = 8.dp)
+                                        )
+                                    }
                                 }
-                                items(realFolders) { folder ->
+                                items(realFolders.filter { it.name != sourceToMove?.folderName }) { folder ->
                                     Text(
                                         text = folder.name,
                                         fontSize = 16.sp,
