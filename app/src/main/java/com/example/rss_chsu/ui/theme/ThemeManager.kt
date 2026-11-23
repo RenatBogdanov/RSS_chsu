@@ -14,41 +14,53 @@ import kotlinx.coroutines.flow.asStateFlow
 object ThemeManager {
     private const val PREFS_NAME = "app_theme_prefs"
     private const val KEY_IS_DARK_THEME = "is_dark_theme"
+    private const val KEY_APP_THEME = "app_theme"
     private const val KEY_IS_LARGE_CARDS = "is_large_cards"
 
-    private val _isDarkTheme = MutableStateFlow(false)
-    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+    private val _appTheme = MutableStateFlow(AppTheme.LIGHT)
+    val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
 
     private val _isLargeCards = MutableStateFlow(false)
     val isLargeCards: StateFlow<Boolean> = _isLargeCards.asStateFlow()
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val isFirstLaunch = !prefs.contains(KEY_IS_DARK_THEME)
+        val savedThemeName = prefs.getString(KEY_APP_THEME, null)
 
-        val isDark = if (isFirstLaunch) {
-            val nightModeFlags =
-                context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-            val systemIsDark = nightModeFlags == Configuration.UI_MODE_NIGHT_YES
-            prefs.edit().putBoolean(KEY_IS_DARK_THEME, systemIsDark).apply()
-            systemIsDark
+        val resolvedTheme = if (savedThemeName != null) {
+            runCatching { AppTheme.valueOf(savedThemeName) }.getOrDefault(AppTheme.LIGHT)
         } else {
-            prefs.getBoolean(KEY_IS_DARK_THEME, false)
+            val isFirstLaunch = !prefs.contains(KEY_IS_DARK_THEME)
+            val isDark = if (isFirstLaunch) {
+                val nightModeFlags =
+                    context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                val systemIsDark = nightModeFlags == Configuration.UI_MODE_NIGHT_YES
+                prefs.edit().putBoolean(KEY_IS_DARK_THEME, systemIsDark).apply()
+                systemIsDark
+            } else {
+                prefs.getBoolean(KEY_IS_DARK_THEME, false)
+            }
+            val migrated = if (isDark) AppTheme.DARK else AppTheme.LIGHT
+            prefs.edit().putString(KEY_APP_THEME, migrated.name).apply()
+            migrated
         }
 
-        _isDarkTheme.value = isDark
+        _appTheme.value = resolvedTheme
         _isLargeCards.value = prefs.getBoolean(KEY_IS_LARGE_CARDS, false)
-        syncSystemNightMode(context, isDark)
+        syncSystemNightMode(context, resolvedTheme != AppTheme.LIGHT)
     }
 
-    fun setDarkTheme(context: Context, isDark: Boolean) {
-        if (_isDarkTheme.value == isDark) return
+    fun setAppTheme(context: Context, theme: AppTheme) {
+        if (_appTheme.value == theme) return
 
-        _isDarkTheme.value = isDark
+        _appTheme.value = theme
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(KEY_IS_DARK_THEME, isDark).apply()
+        prefs.edit()
+            .putString(KEY_APP_THEME, theme.name)
+            .putBoolean(KEY_IS_DARK_THEME, theme != AppTheme.LIGHT)
+            .apply()
 
-        syncSystemNightMode(context, isDark)
+        syncSystemNightMode(context, theme != AppTheme.LIGHT)
     }
 
     fun setLargeCards(context: Context, isLarge: Boolean) {
@@ -61,7 +73,7 @@ object ThemeManager {
 
     fun applyPendingIconChange(context: Context) {
         val pm = context.packageManager
-        val isDark = _isDarkTheme.value
+        val isDark = _appTheme.value != AppTheme.LIGHT
         val lightAlias = ComponentName(context, "${context.packageName}.MainActivityLight")
         val darkAlias = ComponentName(context, "${context.packageName}.MainActivityDark")
 

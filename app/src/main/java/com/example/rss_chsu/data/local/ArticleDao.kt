@@ -52,6 +52,31 @@ interface ArticleDao {
     )
     fun observeArticleCounts(): Flow<ArticleCounts>
 
+    /** Точные счётчики с учётом выбранных фильтров по источникам и папкам. */
+    @Query(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COALESCE(SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END), 0) AS unread,
+            COALESCE(SUM(CASE WHEN isBookmarked = 1 THEN 1 ELSE 0 END), 0) AS bookmarks
+        FROM articles
+        WHERE (
+                :hasNoFilters = 1
+                OR (:hasSourceFilter = 1 AND sourceId IN (:sourceDomains))
+                OR (:hasFolderFilter = 1 AND sourceId IN (
+                    SELECT domain FROM sources WHERE folderName IN (:folderNames)
+                ))
+          )
+        """
+    )
+    fun observeFilteredArticleCounts(
+        hasNoFilters: Boolean,
+        hasSourceFilter: Boolean,
+        sourceDomains: List<String>,
+        hasFolderFilter: Boolean,
+        folderNames: List<String>
+    ): Flow<ArticleCounts>
+
     /** Точные счётчики по каждому источнику; используются для подписок и папок. */
     @Query(
         """

@@ -34,7 +34,7 @@ import com.example.rss_chsu.ui.theme.*
 fun SettingsScreen() {
     val context = LocalContext.current
     var showDeleteAppDialog by remember { mutableStateOf(false) }
-    val isDarkTheme by ThemeManager.isDarkTheme.collectAsState()
+    val currentTheme by ThemeManager.appTheme.collectAsState()
     val isLargeCards by ThemeManager.isLargeCards.collectAsState()
 
     LaunchedEffect(context) {
@@ -76,21 +76,29 @@ fun SettingsScreen() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 16.dp, horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ThemeOptionItem(
                         title = "Светлая",
-                        isDarkThemeOption = false,
-                        isSelected = !isDarkTheme,
-                        onClick = { ThemeManager.setDarkTheme(context, false) }
+                        primarySwatch = Color(0xFFFFFFFF),
+                        secondarySwatch = Color(0xFF111113),
+                        isSelected = currentTheme == AppTheme.LIGHT,
+                        onClick = { ThemeManager.setAppTheme(context, AppTheme.LIGHT) }
                     )
-                    Spacer(modifier = Modifier.width(48.dp))
                     ThemeOptionItem(
                         title = "Тёмная",
-                        isDarkThemeOption = true,
-                        isSelected = isDarkTheme,
-                        onClick = { ThemeManager.setDarkTheme(context, true) }
+                        primarySwatch = Color(0xFF1E1E1E),
+                        secondarySwatch = Color(0xFFFFFFFF),
+                        isSelected = currentTheme == AppTheme.DARK,
+                        onClick = { ThemeManager.setAppTheme(context, AppTheme.DARK) }
+                    )
+                    ThemeOptionItem(
+                        title = "GTA VI",
+                        primarySwatch = Color(0xFF1D1238),
+                        secondarySwatch = Color(0xFFFF3E9D),
+                        isSelected = currentTheme == AppTheme.GTA_VI,
+                        onClick = { ThemeManager.setAppTheme(context, AppTheme.GTA_VI) }
                     )
                 }
             }
@@ -257,17 +265,14 @@ fun SettingsScreen() {
 @Composable
 private fun ThemeOptionItem(
     title: String,
-    isDarkThemeOption: Boolean,
+    primarySwatch: Color,
+    secondarySwatch: Color,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val primaryThemeColor = TextPrimary
-    val surfaceThemeColor = LightSurface
-
-    val circleBgColor = if (isDarkThemeOption) primaryThemeColor else surfaceThemeColor
-    val wedgeColor = if (isDarkThemeOption) surfaceThemeColor else primaryThemeColor
-
-    val mainBorderColor = if (isSelected) primaryThemeColor else LightCardBorder
+    val activeBorderColor = if (isSelected) DarkPrimary else LightCardBorder
+    val badgeBgColor = DarkPrimary
+    val badgeIconColor = OnDarkPrimary
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -286,10 +291,10 @@ private fun ThemeOptionItem(
                     .clip(CircleShape)
                     .border(
                         width = if (isSelected) 2.5.dp else 1.dp,
-                        color = mainBorderColor,
+                        color = activeBorderColor,
                         shape = CircleShape
                     )
-                    .background(circleBgColor),
+                    .background(primarySwatch),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -307,7 +312,7 @@ private fun ThemeOptionItem(
                     }
                     drawPath(
                         path = path,
-                        color = wedgeColor
+                        color = secondarySwatch
                     )
                 }
             }
@@ -318,10 +323,10 @@ private fun ThemeOptionItem(
                         .size(22.dp)
                         .align(Alignment.BottomEnd)
                         .clip(CircleShape)
-                        .background(primaryThemeColor)
+                        .background(badgeBgColor)
                         .border(
                             width = 1.dp,
-                            color = surfaceThemeColor,
+                            color = LightSurface,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -329,7 +334,7 @@ private fun ThemeOptionItem(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = surfaceThemeColor,
+                        tint = badgeIconColor,
                         modifier = Modifier.size(13.dp)
                     )
                 }

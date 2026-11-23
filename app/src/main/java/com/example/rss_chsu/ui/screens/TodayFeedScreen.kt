@@ -9,12 +9,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,25 +37,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.paging.LoadState
 import androidx.paging.PagingData
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.rss_chsu.data.local.ArticleCounts
+import com.example.rss_chsu.data.local.ArticlePagingRepository
 import com.example.rss_chsu.data.local.ArticleStatus
 import com.example.rss_chsu.data.local.SourceNameIndex
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.components.TopAppLogoBar
-import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
 import com.example.rss_chsu.ui.model.Folder
+import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.flow.flowOf
@@ -81,22 +83,6 @@ fun TodayFeedScreen(
     val articleStatuses by feedViewModel.articleStatuses.collectAsState()
     val isLargeCards by ThemeManager.isLargeCards.collectAsState()
 
-    val filterOptions = remember(totalArticleCount, personalizedArticles.size, unreadArticleCount) {
-        listOf(
-            "Все ($totalArticleCount)",
-            "Для вас (${personalizedArticles.size})",
-            "Новые ($unreadArticleCount)"
-        )
-    }
-
-    // Стабильные проекции источников:
-    //  1) sourcesList меняется на каждый UPDATE unreadCount (markAsRead инвалидирует
-    //     observeSourceCounts -> combine пересобирает Source). remember(sourcesList)
-    //     перезапускался бы на каждом тапе и создавал новый Map/List.
-    //  2) Вместо этого запоминаем ПАРЫ (name->domain, domain->folderName). remember по
-    //     списку пар сравнивает их структурно (Pair.equals); если имена/папки не менялись —
-    //     остаётся тот же объект. Так sourceNameIndex/sourceFolderByDomain стабильны,
-    //     а filteredPersonalized не пересчитывается на каждый тап «прочитано».
     val sourceNamePairs = remember(sourcesList) { sourcesList.map { it.name to it.domain } }
     val sourceNameIndex = remember(sourceNamePairs) {
         SourceNameIndex(SourceNameResolver.indexForEntries(sourceNamePairs))
@@ -119,6 +105,32 @@ fun TodayFeedScreen(
                 matchesFolder || matchesSource
             }
         }
+    }
+
+    val hasActiveFilter = selectedFolders.isNotEmpty() || selectedSources.isNotEmpty()
+
+    val filteredDbCounts by remember(selectedSourceDomains, folderNames) {
+        ArticlePagingRepository.observeFilteredArticleCounts(
+            sourceDomains = selectedSourceDomains,
+            folderNames = folderNames
+        )
+    }.collectAsState(
+        initial = ArticleCounts(
+            total = totalArticleCount,
+            unread = unreadArticleCount
+        )
+    )
+
+    val displayedTotalCount = if (hasActiveFilter) filteredDbCounts.total else totalArticleCount
+    val displayedUnreadCount = if (hasActiveFilter) filteredDbCounts.unread else unreadArticleCount
+    val displayedPersonalizedCount = filteredPersonalized.size
+
+    val filterOptions = remember(displayedTotalCount, displayedPersonalizedCount, displayedUnreadCount) {
+        listOf(
+            "Все ($displayedTotalCount)",
+            "Для вас ($displayedPersonalizedCount)",
+            "Новые ($displayedUnreadCount)"
+        )
     }
 
     Column(
@@ -193,8 +205,6 @@ fun TodayFeedScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = !showFilterSheet
-            // beyondViewportPageCount: дефолт 0. Раньше было 1 — три FeedPage жили
-            // одновременно: три LazyColumn, три collectAsLazyPagingItems, три LazyListState.
         ) { page ->
             FeedPage(
                 pageIndex = page,
@@ -208,7 +218,7 @@ fun TodayFeedScreen(
                 sourceNameIndex = sourceNameIndex,
                 onArticleClick = onArticleClick,
                 onBookmarkClick = onBookmarkClick,
-                totalArticleCount = totalArticleCount,
+                totalArticleCount = displayedTotalCount,
                 isRefreshing = isRefreshing
             )
         }
@@ -244,7 +254,12 @@ fun TodayFeedScreen(
                                 .clickable { isAscendingSort = false },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Сначала новые", fontSize = 13.sp, fontWeight = if (!isAscendingSort) FontWeight.Bold else FontWeight.Medium, color = if (!isAscendingSort) TextPrimary else TextSecondary)
+                            Text(
+                                "Сначала новые",
+                                fontSize = 13.sp,
+                                fontWeight = if (!isAscendingSort) FontWeight.Bold else FontWeight.Medium,
+                                color = if (!isAscendingSort) TextPrimary else TextSecondary
+                            )
                         }
                         Box(
                             modifier = Modifier
@@ -255,7 +270,12 @@ fun TodayFeedScreen(
                                 .clickable { isAscendingSort = true },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Сначала старые", fontSize = 13.sp, fontWeight = if (isAscendingSort) FontWeight.Bold else FontWeight.Medium, color = if (isAscendingSort) TextPrimary else TextSecondary)
+                            Text(
+                                "Сначала старые",
+                                fontSize = 13.sp,
+                                fontWeight = if (isAscendingSort) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isAscendingSort) TextPrimary else TextSecondary
+                            )
                         }
                     }
 
@@ -334,9 +354,6 @@ private fun CustomTabRow(
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Ширина измеряется через onSizeChanged: Dp.toPx() внутри BoxWithConstraints
-        // не резолвится (там нет неявного Density), а tabWidthPx в пикселях сразу
-        // годится для graphicsLayer без конверсий.
         var rowWidthPx by remember { mutableStateOf(0) }
         val tabWidthPx = if (filterOptions.isEmpty()) 0f else rowWidthPx.toFloat() / filterOptions.size
         val tabWidthDp = with(LocalDensity.current) { tabWidthPx.toDp() }
@@ -350,10 +367,6 @@ private fun CustomTabRow(
                 .height(40.dp)
                 .padding(4.dp)
         ) {
-            // Смещение читаем ВНУТРИ graphicsLayer: лямбда исполняется на стадии Draw в
-            // Render-потоке. Наружу (в derivedStateOf + .value) выносить нельзя — это
-            // заставляло бы рекомпозицию всего TabRow на каждый из 120 скролл-кадров в секунду,
-            // а анимация ползунка шла бы вразнобой со свайпом.
             Box(
                 modifier = Modifier
                     .width(tabWidthDp)
@@ -379,8 +392,6 @@ private fun CustomTabRow(
                         Text(
                             text = optionText,
                             fontSize = 12.sp,
-                            // Фиксированный fontWeisht: Bold шире Medium -> смена веса
-                            // меняла intrinsic width и вызывала layout-прыжки табов.
                             fontWeight = FontWeight.SemiBold,
                             color = if (isSelected) TextPrimary else TextSecondary,
                             maxLines = 1,
@@ -412,11 +423,6 @@ private fun FeedPage(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // showScrollToTop читается только внутри FAB (см. ScrollToTopFab — там лямбда,
-    // а не Boolean). Раньше showScrollToTop читался в теле FeedPage через
-    // derivedStateOf + делегат by — это подписывало ВЕСЬ FeedPage на изменения
-    // canScrollBackward. Плюс был баговый LaunchedEffect(isRefreshing, firstVisibleItem),
-    // который выкидывал пользователя наверх при скролле до 1-2 элемента.
     val showScrollToTop = remember {
         derivedStateOf { listState.canScrollBackward }
     }
@@ -583,8 +589,6 @@ private fun BoxScope.ScrollToTopFab(
     visible: () -> Boolean,
     onClick: () -> Unit
 ) {
-    // visible — лямбда: чтение showScrollToTop.value происходит внутри AnimatedVisibility,
-    // а не в теле FeedPage. При смене canScrollBackward рекомпозируется только FAB.
     AnimatedVisibility(
         visible = visible(),
         modifier = Modifier
@@ -695,9 +699,6 @@ fun FeaturedArticleCard(
                     modifier = Modifier.size(28.dp)
                 )
                 if (article.imageUrl.isNotEmpty()) {
-                    // remember: ImageRequest создаётся один раз на карточку.
-                    // crossfade(100) вместо crossfade(true): 300мс-анимация при recycle
-                    // в LazyColumn при быстром скролле забивает UI-поток.
                     val imageModel = remember(article.imageUrl) {
                         ImageRequest.Builder(context)
                             .data(article.imageUrl)
@@ -839,8 +840,6 @@ fun FeedArticleRow(
             }
 
             if (article.imageUrl.isNotEmpty()) {
-                // remember: стабильная модель ImageRequest на карточку.
-                // crossfade(100) вместо true — короче анимация, меньше кадров на UI-потоке.
                 val imageModel = remember(article.imageUrl) {
                     ImageRequest.Builder(context)
                         .data(article.imageUrl)

@@ -29,6 +29,25 @@ object ArticlePagingRepository {
 
     fun observeArticleCounts(): Flow<ArticleCounts> = dao().observeArticleCounts()
 
+    fun observeFilteredArticleCounts(
+        sourceDomains: List<String> = emptyList(),
+        folderNames: List<String> = emptyList()
+    ): Flow<ArticleCounts> {
+        val hasSourceFilter = sourceDomains.isNotEmpty()
+        val hasFolderFilter = folderNames.isNotEmpty()
+        val noFilters = !hasSourceFilter && !hasFolderFilter
+        val safeDomains = sourceDomains.ifEmpty { listOf("__no_source_filter__") }
+        val safeFolders = folderNames.ifEmpty { listOf("__no_folder_filter__") }
+
+        return dao().observeFilteredArticleCounts(
+            hasNoFilters = noFilters,
+            hasSourceFilter = hasSourceFilter,
+            sourceDomains = safeDomains,
+            hasFolderFilter = hasFolderFilter,
+            folderNames = safeFolders
+        )
+    }
+
     /**
      * Маппинг всей страницы целиком на Dispatchers.Default.
      * Один контекст-свитч на страницу вместо N переключений на каждый элемент.
@@ -36,7 +55,7 @@ object ArticlePagingRepository {
     private fun Flow<PagingData<ArticleListItem>>.mapToArticlesOnDefault(): Flow<PagingData<Article>> =
         map { page ->
             withContext(Dispatchers.Default) {
-                page.map { it.toArticle(isFeatured = false) } // Добавлен параметр isFeatured
+                page.map { it.toArticle(isFeatured = false) }
             }
         }
 

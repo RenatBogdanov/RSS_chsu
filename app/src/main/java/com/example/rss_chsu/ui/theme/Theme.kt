@@ -10,6 +10,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+enum class AppTheme {
+    LIGHT,
+    DARK,
+    GTA_VI
+}
+
 // Константы по умолчанию
 private val BaseLightBackground = Color(0xFFF7F7F5)
 private val BaseLightSurface = Color(0xFFFFFFFF)
@@ -21,6 +27,17 @@ private val BaseTextPrimary = Color(0xFF111113)
 private val BaseTextSecondary = Color(0xFF76767A)
 private val BaseChipUnselected = Color(0xFFEBEBE8)
 private val BaseBadgeContainer = Color(0xFFEEEEEC)
+
+// Палитра GTA VI (Vice City sunset & neon night)
+private val Gta6Background = Color(0xFF120B24)
+private val Gta6Surface = Color(0xFF1D1238)
+private val Gta6SurfaceContainer = Color(0xFF2A194E)
+private val Gta6CardBorder = Color(0xFF4A276B)
+private val Gta6PrimaryNeonPink = Color(0xFFFF3E9D)
+private val Gta6OnPrimary = Color(0xFFFFFFFF)
+private val Gta6TextPrimary = Color(0xFFFFF5FA)
+private val Gta6TextSecondary = Color(0xFFD4A5C7)
+private val Gta6ChipUnselected = Color(0xFF28174A)
 
 // Динамические провайдеры цветов
 val LightBackground: Color
@@ -79,19 +96,38 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF2C2C2C)
 )
 
+private val Gta6ColorScheme = darkColorScheme(
+    primary = Gta6PrimaryNeonPink,
+    onPrimary = Gta6OnPrimary,
+    background = Gta6Background,
+    onBackground = Gta6TextPrimary,
+    surface = Gta6Surface,
+    onSurface = Gta6TextPrimary,
+    surfaceVariant = Gta6SurfaceContainer,
+    onSurfaceVariant = Gta6TextSecondary,
+    outline = Gta6CardBorder,
+    outlineVariant = Gta6ChipUnselected
+)
+
 @Composable
 fun RSS_chsuTheme(
-    darkTheme: Boolean = false,
+    appTheme: AppTheme = AppTheme.LIGHT,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when (appTheme) {
+        AppTheme.LIGHT -> LightColorScheme
+        AppTheme.DARK -> DarkColorScheme
+        AppTheme.GTA_VI -> Gta6ColorScheme
+    }
+    val useLightSystemBars = appTheme == AppTheme.LIGHT
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            insetsController.isAppearanceLightStatusBars = useLightSystemBars
+            insetsController.isAppearanceLightNavigationBars = useLightSystemBars
         }
     }
 

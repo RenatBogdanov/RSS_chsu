@@ -51,9 +51,9 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val isDarkTheme by ThemeManager.isDarkTheme.collectAsState()
+            val currentTheme by ThemeManager.appTheme.collectAsState()
 
-            RSS_chsuTheme(darkTheme = isDarkTheme) {
+            RSS_chsuTheme(appTheme = currentTheme) {
                 MainScreen()
             }
         }
