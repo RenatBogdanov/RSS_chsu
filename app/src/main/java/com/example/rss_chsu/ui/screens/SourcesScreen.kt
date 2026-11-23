@@ -8,7 +8,6 @@ fun SourcesScreen(
     onNotesClick: () -> Unit = {}
 ) {
     SubscriptionsScreen(
-        onAddSourceClick = { },
-        onMenuClick = { }
+        onAddSourceClick = { }
     )
 }

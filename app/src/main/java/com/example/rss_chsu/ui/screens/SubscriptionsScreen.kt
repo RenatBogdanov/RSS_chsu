@@ -32,7 +32,6 @@ import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Folder
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
-import com.example.rss_chsu.ui.model.matchesArticle
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -58,7 +57,7 @@ fun SubscriptionsScreen(
     var addStatusMessage by remember { mutableStateOf<String?>(null) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var sourceToMove by remember { mutableStateOf<Source?>(null) }
-    
+
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -215,395 +214,395 @@ fun SubscriptionsScreen(
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
 
-            // All Articles Banner Card
-            /*item {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(14.dp)),
-                    color = LightSurfaceContainer
-                ) {
-                    Row(
+                // All Articles Banner Card
+                /*item {
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clip(RoundedCornerShape(14.dp)),
+                        color = LightSurfaceContainer
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = RssIcons.Subscriptions,
-                                contentDescription = null,
-                                tint = DarkPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = RssIcons.Subscriptions,
+                                    contentDescription = null,
+                                    tint = DarkPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Все статьи",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = ChipUnselected
+                            ) {
+                                Text(
+                                    text = "${realArticles.size}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }*/
+
+                if (realFolders.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "Все статьи",
-                                fontSize = 16.sp,
+                                text = "Ваши папки",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                         }
+                    }
 
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = ChipUnselected
+                    items(
+                        items = realFolders,
+                        key = { it.id }
+                    ) { folder ->
+                        val sourcesInFolder = realSources.filter { it.folderName == folder.name }
+                        SwipeToDeleteContainer(
+                            onDelete = { RssRepository.deleteFolder(folder.id) }
                         ) {
-                            Text(
-                                text = "${realArticles.size}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            FolderItemRow(
+                                folder = folder,
+                                sourcesInFolder = sourcesInFolder,
+                                articlesList = realArticles,
+                                onToggleExpand = {
+                                    RssRepository.toggleFolderExpanded(folder.id)
+                                },
+                                onDeleteSource = { sourceId ->
+                                    RssRepository.deleteSource(sourceId)
+                                },
+                                onMoveSource = { source ->
+                                    sourceToMove = source
+                                }
                             )
                         }
                     }
-                }
-            }*/
 
-            if (realFolders.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Ваши папки",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                    }
-                }
-
-                items(
-                    items = realFolders,
-                    key = { it.id }
-                ) { folder ->
-                    val sourcesInFolder = realSources.filter { it.folderName == folder.name }
-                    SwipeToDeleteContainer(
-                        onDelete = { RssRepository.deleteFolder(folder.id) }
-                    ) {
-                        FolderItemRow(
-                            folder = folder,
-                            sourcesInFolder = sourcesInFolder,
-                            articlesList = realArticles,
-                            onToggleExpand = {
-                                RssRepository.toggleFolderExpanded(folder.id)
-                            },
-                            onDeleteSource = { sourceId -> 
-                                RssRepository.deleteSource(sourceId) 
-                            },
-                            onMoveSource = { source ->
-                                sourceToMove = source
+                    val unassignedSources = realSources.filter { it.folderName == null }
+                    if (unassignedSources.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Без папки",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(
+                            items = unassignedSources,
+                            key = { it.id }
+                        ) { source ->
+                            val count = source.articleCount
+                            SwipeToDeleteContainer(
+                                onDelete = { RssRepository.deleteSource(source.domain) }
+                            ) {
+                                SourceSubItemRow(
+                                    source = source,
+                                    articleCount = count,
+                                    onMoveClick = { sourceToMove = source }
+                                )
                             }
-                        )
+                        }
                     }
-                }
-
-                val unassignedSources = realSources.filter { it.folderName == null }
-                if (unassignedSources.isNotEmpty()) {
+                } else if (realSources.isEmpty()) {
                     item {
-                        Text(
-                            text = "Без папки",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "У вас пока нет источников.\nДобавьте RSS-ленту выше, чтобы подгрузить новости.",
+                                fontSize = 14.sp,
+                                color = TextSecondary,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 20.sp
+                            )
+                        }
                     }
+                } else {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Ваши источники",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+
                     items(
-                        items = unassignedSources,
+                        items = realSources,
                         key = { it.id }
                     ) { source ->
-                        val count = realArticles.count { source.matchesArticle(it) }
+                        val count = source.articleCount
                         SwipeToDeleteContainer(
                             onDelete = { RssRepository.deleteSource(source.domain) }
                         ) {
                             SourceSubItemRow(
-                                source = source, 
+                                source = source,
                                 articleCount = count,
                                 onMoveClick = { sourceToMove = source }
                             )
                         }
                     }
                 }
-            } else if (realSources.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "У вас пока нет источников.\nДобавьте RSS-ленту выше, чтобы подгрузить новости.",
-                            fontSize = 14.sp,
-                            color = TextSecondary,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 20.sp
+            }
+
+            // Floating Bottom Pill Button: "+ Создать папку"
+            Button(
+                onClick = { showCreateFolderDialog = true },
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp)
+                    .height(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Создать папку",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+
+            // Create Folder Dialog
+            if (showCreateFolderDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCreateFolderDialog = false },
+                    containerColor = LightSurface,
+                    title = { Text("Создать новую папку", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+                    text = {
+                        OutlinedTextField(
+                            value = newFolderNameInput,
+                            onValueChange = { newFolderNameInput = it },
+                            placeholder = { Text("Название папки", color = TextSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = DarkPrimary,
+                                unfocusedBorderColor = LightCardBorder,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
                         )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (newFolderNameInput.isNotBlank()) {
+                                    RssRepository.createFolder(newFolderNameInput.trim())
+                                    newFolderNameInput = ""
+                                    showCreateFolderDialog = false
+                                }
+                            }
+                        ) {
+                            Text("Создать", fontWeight = FontWeight.Bold, color = DarkPrimary)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCreateFolderDialog = false }) {
+                            Text("Отмена", color = TextSecondary)
+                        }
                     }
-                }
-            } else {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                )
+            }
+
+            // Help Dialog Instructions
+            if (showHelpDialog) {
+                AlertDialog(
+                    onDismissRequest = { showHelpDialog = false },
+                    containerColor = LightSurface,
+                    title = {
                         Text(
-                            text = "Ваши источники",
-                            fontSize = 14.sp,
+                            text = "Как найти RSS-ссылку?",
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
-                    }
-                }
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "1. Откройте нужный новостной сайт или блог в браузере.\n" +
+                                        "2. Найдите значок RSS или ссылку «RSS» в подвале сайта (футере) или меню.\n" +
+                                        "3. Скопируйте прямую ссылку на RSS и вставьте её в поле ввода.\n\n" +
+                                        "Или нажмите на любой пример ниже, чтобы вставить его:",
+                                fontSize = 13.sp,
+                                color = TextSecondary,
+                                lineHeight = 18.sp
+                            )
 
-                items(
-                    items = realSources,
-                    key = { it.id }
-                ) { source ->
-                    val count = realArticles.count { source.matchesArticle(it) }
-                    SwipeToDeleteContainer(
-                        onDelete = { RssRepository.deleteSource(source.domain) }
-                    ) {
-                        SourceSubItemRow(
-                            source = source,
-                            articleCount = count,
-                            onMoveClick = { sourceToMove = source }
-                        )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = ChipUnselected,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        rssUrlInput = "https://lenta.ru/rss/news"
+                                        showHelpDialog = false
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(text = "Лента.ру", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(text = "https://lenta.ru/rss/news", fontSize = 11.sp, color = DarkPrimary)
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = ChipUnselected,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        rssUrlInput = "https://cherinfo.ru/rss/news"
+                                        showHelpDialog = false
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(text = "ЧерИнфо", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(text = "https://cherinfo.ru/rss/news", fontSize = 11.sp, color = DarkPrimary)
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = ChipUnselected,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        rssUrlInput = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"
+                                        showHelpDialog = false
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(text = "РБК", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(
+                                        text = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",
+                                        fontSize = 11.sp,
+                                        color = DarkPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showHelpDialog = false }) {
+                            Text("Понятно", fontWeight = FontWeight.Bold, color = DarkPrimary)
+                        }
                     }
-                }
+                )
+            }
+
+            // Dialog for moving a source to a folder
+            if (sourceToMove != null) {
+                AlertDialog(
+                    onDismissRequest = { sourceToMove = null },
+                    containerColor = LightSurface,
+                    title = { Text("Переместить источник", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Выберите папку для «${sourceToMove?.name}»",
+                                fontSize = 14.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
+                            ) {
+                                item {
+                                    Text(
+                                        text = "Без папки",
+                                        fontSize = 16.sp,
+                                        color = TextPrimary,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                RssRepository.updateSourceFolder(sourceToMove!!.domain, null)
+                                                sourceToMove = null
+                                            }
+                                            .padding(vertical = 12.dp, horizontal = 8.dp)
+                                    )
+                                }
+                                items(realFolders) { folder ->
+                                    Text(
+                                        text = folder.name,
+                                        fontSize = 16.sp,
+                                        color = TextPrimary,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                RssRepository.updateSourceFolder(sourceToMove!!.domain, folder.name)
+                                                sourceToMove = null
+                                            }
+                                            .padding(vertical = 12.dp, horizontal = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { sourceToMove = null }) {
+                            Text("Отмена", color = TextSecondary)
+                        }
+                    }
+                )
             }
         }
-
-        // Floating Bottom Pill Button: "+ Создать папку"
-        Button(
-            onClick = { showCreateFolderDialog = true },
-            shape = RoundedCornerShape(20.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = DarkPrimary),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp)
-                .height(36.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "Создать папку",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-        }
-
-        // Create Folder Dialog
-        if (showCreateFolderDialog) {
-            AlertDialog(
-                onDismissRequest = { showCreateFolderDialog = false },
-                containerColor = LightSurface,
-                title = { Text("Создать новую папку", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
-                text = {
-                    OutlinedTextField(
-                        value = newFolderNameInput,
-                        onValueChange = { newFolderNameInput = it },
-                        placeholder = { Text("Название папки", color = TextSecondary) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = DarkPrimary,
-                            unfocusedBorderColor = LightCardBorder,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        )
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            if (newFolderNameInput.isNotBlank()) {
-                                RssRepository.createFolder(newFolderNameInput.trim())
-                                newFolderNameInput = ""
-                                showCreateFolderDialog = false
-                            }
-                        }
-                    ) {
-                        Text("Создать", fontWeight = FontWeight.Bold, color = DarkPrimary)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showCreateFolderDialog = false }) {
-                        Text("Отмена", color = TextSecondary)
-                    }
-                }
-            )
-        }
-
-        // Help Dialog Instructions
-        if (showHelpDialog) {
-            AlertDialog(
-                onDismissRequest = { showHelpDialog = false },
-                containerColor = LightSurface,
-                title = {
-                    Text(
-                        text = "Как найти RSS-ссылку?",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "1. Откройте нужный новостной сайт или блог в браузере.\n" +
-                                "2. Найдите значок RSS или ссылку «RSS» в подвале сайта (футере) или меню.\n" +
-                                "3. Скопируйте прямую ссылку на RSS и вставьте её в поле ввода.\n\n" +
-                                "Или нажмите на любой пример ниже, чтобы вставить его:",
-                            fontSize = 13.sp,
-                            color = TextSecondary,
-                            lineHeight = 18.sp
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = ChipUnselected,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    rssUrlInput = "https://lenta.ru/rss/news"
-                                    showHelpDialog = false
-                                }
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(text = "Лента.ру", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "https://lenta.ru/rss/news", fontSize = 11.sp, color = DarkPrimary)
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = ChipUnselected,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    rssUrlInput = "https://cherinfo.ru/rss/news"
-                                    showHelpDialog = false
-                                }
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(text = "ЧерИнфо", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "https://cherinfo.ru/rss/news", fontSize = 11.sp, color = DarkPrimary)
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = ChipUnselected,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    rssUrlInput = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss"
-                                    showHelpDialog = false
-                                }
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(text = "РБК", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(
-                                    text = "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",
-                                    fontSize = 11.sp,
-                                    color = DarkPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showHelpDialog = false }) {
-                        Text("Понятно", fontWeight = FontWeight.Bold, color = DarkPrimary)
-                    }
-                }
-            )
-        }
-
-        // Dialog for moving a source to a folder
-        if (sourceToMove != null) {
-            AlertDialog(
-                onDismissRequest = { sourceToMove = null },
-                containerColor = LightSurface,
-                title = { Text("Переместить источник", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) },
-                text = {
-                    Column {
-                        Text(
-                            text = "Выберите папку для «${sourceToMove?.name}»",
-                            fontSize = 14.sp,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)
-                        ) {
-                            item {
-                                Text(
-                                    text = "Без папки",
-                                    fontSize = 16.sp,
-                                    color = TextPrimary,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            RssRepository.updateSourceFolder(sourceToMove!!.domain, null)
-                                            sourceToMove = null
-                                        }
-                                        .padding(vertical = 12.dp, horizontal = 8.dp)
-                                )
-                            }
-                            items(realFolders) { folder ->
-                                Text(
-                                    text = folder.name,
-                                    fontSize = 16.sp,
-                                    color = TextPrimary,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            RssRepository.updateSourceFolder(sourceToMove!!.domain, folder.name)
-                                            sourceToMove = null
-                                        }
-                                        .padding(vertical = 12.dp, horizontal = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { sourceToMove = null }) {
-                        Text("Отмена", color = TextSecondary)
-                    }
-                }
-            )
-        }
     }
-}
 }
 
 @Composable
@@ -615,9 +614,8 @@ fun FolderItemRow(
     onDeleteSource: (String) -> Unit,
     onMoveSource: (Source) -> Unit
 ) {
-    val totalFolderArticles = remember(sourcesInFolder, articlesList) {
-        articlesList.count { article -> sourcesInFolder.any { source -> source.matchesArticle(article) } }
-    }
+    // Каждая статья привязана ровно к одному источнику, поэтому сумма по источникам папки точна
+    val totalFolderArticles = sourcesInFolder.sumOf { it.articleCount }
 
     Column(
         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)
@@ -697,12 +695,12 @@ fun FolderItemRow(
                     )
                 } else {
                     sourcesInFolder.forEach { source ->
-                        val count = articlesList.count { source.matchesArticle(it) }
+                        val count = source.articleCount
                         SwipeToDeleteContainer(
                             onDelete = { onDeleteSource(source.domain) }
                         ) {
                             SourceSubItemRow(
-                                source = source, 
+                                source = source,
                                 articleCount = count,
                                 horizontalPadding = 0.dp
                             )
@@ -813,7 +811,7 @@ fun SwipeToDeleteContainer(
                     else -> MaterialTheme.colorScheme.background
                 }, label = "color"
             )
-            
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()

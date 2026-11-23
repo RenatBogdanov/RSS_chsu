@@ -18,7 +18,6 @@ fun MainScreen(
 ) {
     var currentTab by remember { mutableStateOf(NavTab.TODAY) }
     var selectedArticle by remember { mutableStateOf<Article?>(null) }
-    var showSettingsSheet by remember { mutableStateOf(false) }
 
     val articles by feedViewModel.articles.collectAsState()
 
@@ -50,24 +49,16 @@ fun MainScreen(
                 ) {
                     when (currentTab) {
                         NavTab.TODAY -> FeedScreen(
-                            onMenuClick = { showSettingsSheet = true },
                             onNavClick = { article -> selectedArticle = article }
                         )
                         NavTab.SUBSCRIPTIONS -> SubscriptionsScreen(
-                            onAddSourceClick = { currentTab = NavTab.SEARCH },
-                            onMenuClick = { showSettingsSheet = true }
+                            onAddSourceClick = { currentTab = NavTab.SEARCH }
                         )
                         NavTab.SEARCH -> SearchSourcesScreen()
                         NavTab.SAVED -> SavedArticlesScreen(
-                            onArticleClick = { selectedArticle = it },
-                            onMenuClick = { showSettingsSheet = true }
+                            onArticleClick = { selectedArticle = it }
                         )
-                        NavTab.PROFILE -> Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = androidx.compose.ui.Alignment.Center
-                        ) {
-                            Text("Профиль (в разработке)")
-                        }
+                        NavTab.PROFILE -> ProfileScreen()
                     }
                 }
             }
@@ -83,15 +74,6 @@ fun MainScreen(
                     onBookmarkClick = { feedViewModel.onBookmarkClick(openedArticle.id) },
                     onReadToggle = { feedViewModel.onReadToggle(openedArticle.id) }
                 )
-            }
-        }
-
-        if (showSettingsSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showSettingsSheet = false },
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                SettingsSheet(onDismiss = { showSettingsSheet = false })
             }
         }
     }

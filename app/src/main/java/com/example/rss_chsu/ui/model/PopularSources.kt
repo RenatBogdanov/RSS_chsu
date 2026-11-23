@@ -91,7 +91,7 @@ object PopularSources {
         Source("vokrugsveta", "Вокруг Света", "https://www.vokrugsveta.ru/rss", "География, путешествия, наука.", "", "ВС"),
         Source("vzglyad", "Взгляд", "https://vz.ru/rss.xml", "Деловая газета Взгляд.", "", "ВЗ"),
         Source("wonderzine", "Wonderzine", "https://www.wonderzine.com/rss/all", "Женский журнал.", "", "WZ"),
-        Source("cherinfo", "Cherinfo", "https://cherinfo.ru/rss/news", "Новости Череповца.", "", "ЧЕ"),
+        Source("cherinfo", "Новости Череповца", "https://cherinfo.ru/rss/news", "Новости Череповца.", "", "ЧЕ"),
         Source("xakep", "Хакер", "https://xakep.ru/feed/", "Компьютерный журнал Хакер.", "", "ХК"),
         Source("yandex", "Яндекс.Новости", "https://news.yandex.ru/index.rss", "Топ новостей Яндекса.", "", "ЯН"),
         Source("zavtra", "Завтра", "https://zavtra.ru/rss", "Газета Государства Российского.", "", "ЗВ"),
