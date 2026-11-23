@@ -215,33 +215,74 @@ object RssIcons {
         }.build()
     }
 
-    val Profile: ImageVector by lazy {
+    val Settings: ImageVector by lazy {
         ImageVector.Builder(
-            name = "Profile",
+            name = "Settings",
             defaultWidth = 24.dp,
             defaultHeight = 24.dp,
             viewportWidth = 24f,
             viewportHeight = 24f
         ).apply {
+            // Center hole
             path(
                 stroke = SolidColor(Color.Black),
                 strokeLineWidth = 1.8f,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round
             ) {
-                // Head outline
-                moveTo(12f, 11f)
-                curveTo(13.93f, 11f, 15.5f, 9.43f, 15.5f, 7.5f)
-                curveTo(15.5f, 5.57f, 13.93f, 4f, 12f, 4f)
-                curveTo(10.07f, 4f, 8.5f, 5.57f, 8.5f, 7.5f)
-                curveTo(8.5f, 9.43f, 10.07f, 11f, 12f, 11f)
+                moveTo(12f, 15f)
+                curveTo(13.6569f, 15f, 15f, 13.6569f, 15f, 12f)
+                curveTo(15f, 10.3431f, 13.6569f, 9f, 12f, 9f)
+                curveTo(10.3431f, 9f, 9f, 10.3431f, 9f, 12f)
+                curveTo(9f, 13.6569f, 10.3431f, 15f, 12f, 15f)
                 close()
-
-                // Shoulders / Body outline
-                moveTo(5f, 20f)
-                curveTo(5f, 16.13f, 8.13f, 13f, 12f, 13f)
-                curveTo(15.87f, 13f, 19f, 16.13f, 19f, 20f)
-                lineTo(5f, 20f)
+            }
+            // Gear outline
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 1.8f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(19.14f, 12.94f)
+                curveTo(19.18f, 12.63f, 19.2f, 12.32f, 19.2f, 12f)
+                curveTo(19.2f, 11.68f, 19.18f, 11.37f, 19.14f, 11.06f)
+                lineTo(21.16f, 9.48f)
+                curveTo(21.34f, 9.34f, 21.39f, 9.08f, 21.28f, 8.87f)
+                lineTo(19.36f, 5.55f)
+                curveTo(19.24f, 5.34f, 18.99f, 5.26f, 18.77f, 5.34f)
+                lineTo(16.39f, 6.3f)
+                curveTo(15.9f, 5.92f, 15.37f, 5.61f, 14.8f, 5.37f)
+                lineTo(14.44f, 2.84f)
+                curveTo(14.4f, 2.61f, 14.2f, 2.44f, 13.97f, 2.44f)
+                lineTo(10.03f, 2.44f)
+                curveTo(9.8f, 2.44f, 9.6f, 2.61f, 9.56f, 2.84f)
+                lineTo(9.2f, 5.37f)
+                curveTo(8.63f, 5.61f, 8.1f, 5.92f, 7.61f, 6.3f)
+                lineTo(5.23f, 5.34f)
+                curveTo(5.01f, 5.26f, 4.76f, 5.34f, 4.64f, 5.55f)
+                lineTo(2.72f, 8.87f)
+                curveTo(2.61f, 9.08f, 2.66f, 9.34f, 2.84f, 9.48f)
+                lineTo(4.86f, 11.06f)
+                curveTo(4.82f, 11.37f, 4.8f, 11.69f, 4.8f, 12f)
+                curveTo(4.8f, 12.31f, 4.82f, 12.63f, 4.86f, 12.94f)
+                lineTo(2.84f, 14.52f)
+                curveTo(2.66f, 14.66f, 2.61f, 14.92f, 2.72f, 15.13f)
+                lineTo(4.64f, 18.45f)
+                curveTo(4.76f, 18.66f, 5.01f, 18.74f, 5.23f, 18.66f)
+                lineTo(7.61f, 17.7f)
+                curveTo(8.1f, 18.08f, 8.63f, 18.39f, 9.2f, 18.63f)
+                lineTo(9.56f, 21.16f)
+                curveTo(9.6f, 21.39f, 9.8f, 21.56f, 10.03f, 21.56f)
+                lineTo(13.97f, 21.56f)
+                curveTo(14.2f, 21.56f, 14.4f, 21.39f, 14.44f, 21.16f)
+                lineTo(14.8f, 18.63f)
+                curveTo(15.37f, 18.39f, 15.9f, 18.08f, 16.39f, 17.7f)
+                lineTo(18.77f, 18.66f)
+                curveTo(18.99f, 18.74f, 19.24f, 18.66f, 19.36f, 18.45f)
+                lineTo(21.28f, 15.13f)
+                curveTo(21.39f, 14.92f, 21.34f, 14.66f, 21.16f, 14.52f)
+                lineTo(19.14f, 12.94f)
                 close()
             }
         }.build()

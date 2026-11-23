@@ -20,10 +20,9 @@ import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.theme.*
 
 @Composable
-fun ProfileScreen() {
+fun SettingsScreen() {
     val context = LocalContext.current
 
-    // На случай, если экран профиля открылся раньше инициализации репозитория.
     LaunchedEffect(context) {
         RssRepository.init(context)
     }
@@ -36,7 +35,7 @@ fun ProfileScreen() {
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppLogoBar(
-            title = "ПРОФИЛЬ"
+            title = "НАСТРОЙКИ"
         )
 
         Column(
@@ -45,13 +44,6 @@ fun ProfileScreen() {
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Настройки",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-
             OutlinedButton(
                 onClick = { /* TODO */ },
                 modifier = Modifier.fillMaxWidth().height(48.dp),

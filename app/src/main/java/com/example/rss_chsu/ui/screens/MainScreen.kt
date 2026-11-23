@@ -59,7 +59,7 @@ fun MainScreen(
                         NavTab.SAVED -> SavedArticlesScreen(
                             onArticleClick = { selectedArticleId = it.id }
                         )
-                        NavTab.PROFILE -> ProfileScreen()
+                        NavTab.SETTINGS -> SettingsScreen()
                     }
                 }
             }
