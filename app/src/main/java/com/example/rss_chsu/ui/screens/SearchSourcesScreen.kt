@@ -1,10 +1,10 @@
 package com.example.rss_chsu.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -180,6 +180,8 @@ fun SearchSourcesScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        // 2) Шапка поиска: поиск на всю ширину, высота 40.dp, шрифт 14.sp, иконка 18.dp
+        //    Заголовок «ПОИСК» убран внутри TopAppLogoBar (см. примечание в конце).
         TopAppLogoBar(
             content = {
                 Surface(
@@ -247,19 +249,224 @@ fun SearchSourcesScreen(
                 }
             }
         )
-// Мягко-розовая плашка ошибки под поисковой строкой на 3 секунды
-        AnimatedVisibility(
-            visible = bannerError != null,
-            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+
+        // 3) LazyColumn обёрнут в Box, плашка — оверлеем поверх списка
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 120.dp)
+            ) {
+                if (realFolders.isNotEmpty()) {
+                    item(key = "folder_chips") {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(folderNames.size) { index ->
+                                val isSelected = selectedTagIndex == index
+                                FilterChipPill(
+                                    text = folderNames[index],
+                                    isSelected = isSelected,
+                                    onClick = { selectedTagIndex = index }
+                                )
+                            }
+                        }
+                    }
+                }
+                if (showDiscovery) {
+                    item(key = "category_chips") {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            item {
+                                FilterChipPill(
+                                    text = "Все категории",
+                                    isSelected = selectedCategory == null,
+                                    onClick = {
+                                        selectedCategory = null
+                                        scrollRequest++
+                                    }
+                                )
+                            }
+                            items(activeCategories, key = { "chip_${it.name}" }) { category ->
+                                FilterChipPill(
+                                    text = category.title,
+                                    isSelected = selectedCategory == category,
+                                    onClick = {
+                                        selectedCategory = category
+                                        scrollRequest++
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    if (recommended.isNotEmpty()) {
+                        item(key = "rec_header") {
+                            SectionHeader(
+                                title = "Рекомендуем вам",
+                                trailing = "${recommended.size}"
+                            )
+                        }
+                        item(key = "rec_carousel") {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(
+                                    recommended,
+                                    key = { "rec|${it.source.domain}|${it.source.name}" }
+                                ) { rec ->
+                                    RecommendedSourceCard(
+                                        rec = rec,
+                                        isLoading = rec.source.domain in subscribing,
+                                        onSubscribe = { onSubscribe(rec.source) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    val category = selectedCategory
+                    if (category == null) {
+                        activeCategories.forEach { section ->
+                            val list = categorized[section].orEmpty()
+                            item(key = "sec_${section.name}") {
+                                SectionHeader(title = section.title, trailing = "${list.size}")
+                            }
+                            items(
+                                list.take(SECTION_PREVIEW_COUNT),
+                                key = { "sec_${section.name}|${it.domain}|${it.name}" }
+                            ) { source ->
+                                SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
+                            }
+                            if (list.size > SECTION_PREVIEW_COUNT) {
+                                item(key = "more_${section.name}") {
+                                    ShowAllRow(
+                                        count = list.size,
+                                        onClick = {
+                                            selectedCategory = section
+                                            scrollRequest++
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        val others = categorized[null].orEmpty()
+                        if (others.isNotEmpty()) {
+                            item(key = "sec_custom") {
+                                SectionHeader(title = "Добавленные вами", trailing = "${others.size}")
+                            }
+                            items(others, key = { "sec_custom|${it.domain}|${it.name}" }) { source ->
+                                SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
+                            }
+                        }
+                    } else {
+                        val list = categorized[category].orEmpty()
+                        item(key = "sec_selected_header") {
+                            SectionHeader(title = category.title, trailing = "${list.size}")
+                        }
+                        items(list, key = { "cat|${it.domain}|${it.name}" }) { source ->
+                            SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
+                        }
+                    }
+                } else {
+                    item(key = "flat_header") {
+                        SectionHeader(
+                            title = if (isSearching) "Результаты поиска" else selectedFolderName,
+                            trailing = "Найдено ${filteredSources.size}"
+                        )
+                    }
+                    if (filteredSources.isEmpty()) {
+                        item(key = "flat_empty") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Источников не найдено.",
+                                    fontSize = 14.sp,
+                                    color = TextSecondary,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 20.sp
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredSources, key = { "flat|${it.domain}|${it.name}" }) { source ->
+                            SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
+                        }
+                    }
+                }
+            }
+
+            // Плашка ошибки поверх ленты (BoxScope-расширение, поэтому align работает корректно)
+            SubscriptionErrorBanner(
+                message = bannerError,
+                modifier = Modifier.align(Alignment.TopCenter),
+                onDismiss = { bannerError = null }
+            )
+        }
+    }
+}
+
+/**
+ * Плашка ошибки подписки.
+ * Объявлена как расширение на BoxScope — это гарантирует, что AnimatedVisibility
+ * и Modifier.align относятся к BoxScope, а не к ColumnScope.
+ * Поддерживает смахивание в сторону для досрочного закрытия.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BoxScope.SubscriptionErrorBanner(
+    message: String?,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    // Ключ по message — чтобы при новом сообщении состояние свайпа сбрасывалось
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value != SwipeToDismissBoxValue.Settled) {
+                onDismiss()
+                true
+            } else false
+        }
+    )
+
+    // Сбрасываем состояние свайпа, когда приходит новое сообщение
+    LaunchedEffect(message) {
+        if (message != null) {
+            dismissState.reset()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = message != null,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+    ) {
+        SwipeToDismissBox(
+            state = dismissState,
+            modifier = Modifier.fillMaxWidth(),
+            backgroundContent = {},
+            enableDismissFromStartToEnd = true,
+            enableDismissFromEndToStart = true,
+            gesturesEnabled = message != null
         ) {
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
                 color = Color(0xFFFFECEE),
-                border = BorderStroke(1.dp, Color(0xFFF5B8BF))
+                border = BorderStroke(1.dp, Color(0xFFF5B8BF)),
+                shadowElevation = 4.dp
             ) {
                 Row(
                     modifier = Modifier
@@ -275,7 +482,7 @@ fun SearchSourcesScreen(
                         modifier = Modifier.size(17.dp)
                     )
                     Text(
-                        text = bannerError.orEmpty(),
+                        text = message.orEmpty(),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFF7D1A15),
@@ -286,160 +493,9 @@ fun SearchSourcesScreen(
                 }
             }
         }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 120.dp)
-        ) {
-            if (realFolders.isNotEmpty()) {
-                item(key = "folder_chips") {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(folderNames.size) { index ->
-                            val isSelected = selectedTagIndex == index
-                            FilterChipPill(
-                                text = folderNames[index],
-                                isSelected = isSelected,
-                                onClick = { selectedTagIndex = index }
-                            )
-                        }
-                    }
-                }
-            }
-            if (showDiscovery) {
-                item(key = "category_chips") {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        item {
-                            FilterChipPill(
-                                text = "Все категории",
-                                isSelected = selectedCategory == null,
-                                onClick = {
-                                    selectedCategory = null
-                                    scrollRequest++
-                                }
-                            )
-                        }
-                        items(activeCategories, key = { "chip_${it.name}" }) { category ->
-                            FilterChipPill(
-                                text = category.title,
-                                isSelected = selectedCategory == category,
-                                onClick = {
-                                    selectedCategory = category
-                                    scrollRequest++
-                                }
-                            )
-                        }
-                    }
-                }
-                if (recommended.isNotEmpty()) {
-                    item(key = "rec_header") {
-                        SectionHeader(
-                            title = "Рекомендуем вам",
-                            trailing = "${recommended.size}"
-                        )
-                    }
-                    item(key = "rec_carousel") {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(
-                                recommended,
-                                key = { "rec|${it.source.domain}|${it.source.name}" }
-                            ) { rec ->
-                                RecommendedSourceCard(
-                                    rec = rec,
-                                    isLoading = rec.source.domain in subscribing,
-                                    onSubscribe = { onSubscribe(rec.source) }
-                                )
-                            }
-                        }
-                    }
-                }
-                val category = selectedCategory
-                if (category == null) {
-                    activeCategories.forEach { section ->
-                        val list = categorized[section].orEmpty()
-                        item(key = "sec_${section.name}") {
-                            SectionHeader(title = section.title, trailing = "${list.size}")
-                        }
-                        items(
-                            list.take(SECTION_PREVIEW_COUNT),
-                            key = { "sec_${section.name}|${it.domain}|${it.name}" }
-                        ) { source ->
-                            SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
-                        }
-                        if (list.size > SECTION_PREVIEW_COUNT) {
-                            item(key = "more_${section.name}") {
-                                ShowAllRow(
-                                    count = list.size,
-                                    onClick = {
-                                        selectedCategory = section
-                                        scrollRequest++
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    val others = categorized[null].orEmpty()
-                    if (others.isNotEmpty()) {
-                        item(key = "sec_custom") {
-                            SectionHeader(title = "Добавленные вами", trailing = "${others.size}")
-                        }
-                        items(others, key = { "sec_custom|${it.domain}|${it.name}" }) { source ->
-                            SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
-                        }
-                    }
-                } else {
-                    val list = categorized[category].orEmpty()
-                    item(key = "sec_selected_header") {
-                        SectionHeader(title = category.title, trailing = "${list.size}")
-                    }
-                    items(list, key = { "cat|${it.domain}|${it.name}" }) { source ->
-                        SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
-                    }
-                }
-            } else {
-                item(key = "flat_header") {
-                    SectionHeader(
-                        title = if (isSearching) "Результаты поиска" else selectedFolderName,
-                        trailing = "Найдено ${filteredSources.size}"
-                    )
-                }
-                if (filteredSources.isEmpty()) {
-                    item(key = "flat_empty") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Источников не найдено.",
-                                fontSize = 14.sp,
-                                color = TextSecondary,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 20.sp
-                            )
-                        }
-                    }
-                } else {
-                    items(filteredSources, key = { "flat|${it.domain}|${it.name}" }) { source ->
-                        SourceRow(source = source, subscribing = subscribing, onSubscribe = onSubscribe)
-                    }
-                }
-            }
-        }
     }
 }
+
 @Composable
 private fun RecommendedSourceCard(
     rec: RecommendedSource,
@@ -548,6 +604,7 @@ private fun RecommendedSourceCard(
         }
     }
 }
+
 private fun recommendationHint(rec: RecommendedSource): String {
     val reason = when {
         rec.basedOnInterests && rec.score > 0.0 -> "Подходит под ваши интересы"
@@ -557,6 +614,7 @@ private fun recommendationHint(rec: RecommendedSource): String {
     val category = SourceCategories.of(rec.source)?.title
     return if (category != null) "$category · $reason" else reason
 }
+
 @Composable
 private fun SectionHeader(title: String, trailing: String? = null) {
     Row(
@@ -581,6 +639,7 @@ private fun SectionHeader(title: String, trailing: String? = null) {
         }
     }
 }
+
 @Composable
 private fun ShowAllRow(count: Int, onClick: () -> Unit) {
     Text(
@@ -594,14 +653,14 @@ private fun ShowAllRow(count: Int, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 10.dp)
     )
 }
+
 @Composable
 private fun SourceRow(
     source: Source,
     hint: String? = null,
     subscribing: Set<String>,
     onSubscribe: (Source) -> Unit
-)
- {
+) {
     SourceSearchResultRow(
         source = source,
         onToggleSubscribe = {
@@ -611,6 +670,7 @@ private fun SourceRow(
         isLoading = source.domain in subscribing
     )
 }
+
 @Composable
 fun SourceSearchResultRow(
     source: Source,

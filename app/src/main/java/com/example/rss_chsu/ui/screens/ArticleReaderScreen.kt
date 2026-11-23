@@ -1,17 +1,32 @@
 package com.example.rss_chsu.ui.screens
 
+import android.Manifest
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
@@ -23,6 +38,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -30,10 +53,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
+import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ArticleReaderScreen(
@@ -45,6 +78,7 @@ fun ArticleReaderScreen(
     val isSaved = article.isBookmarked
     val isRead = article.isRead
     var showDetails by remember(article.id) { mutableStateOf(false) }
+    var showFullScreenImage by remember(article.id) { mutableStateOf(false) }
 
     val context = LocalContext.current
     val articleUrl = remember(article.id) {
@@ -53,11 +87,19 @@ fun ArticleReaderScreen(
     val browserIntent = remember(articleUrl) {
         articleUrl?.let {
             try {
-                Intent(Intent.ACTION_VIEW, Uri.parse(it))
+                Intent(Intent.ACTION_VIEW, it.toUri())
             } catch (_: Exception) {
                 null
             }
         }
+    }
+
+    // Полноэкранный просмотрщик изображения
+    if (showFullScreenImage && article.imageUrl.isNotBlank()) {
+        FullScreenImageViewer(
+            imageUrl = article.imageUrl,
+            onDismiss = { showFullScreenImage = false }
+        )
     }
 
     Column(
@@ -140,7 +182,7 @@ fun ArticleReaderScreen(
                 .padding(horizontal = 18.dp, vertical = 6.dp)
         ) {
             // Рубрика + одна компактная строка метаданных
-            val dateLabel = if (article.pubDateFormatted.isNotBlank()) article.pubDateFormatted else article.date
+            val dateLabel = article.pubDateFormatted.ifBlank { article.date }
             val metaParts = listOfNotNull(
                 article.sourceName.takeIf { it.isNotBlank() },
                 dateLabel.takeIf { it.isNotBlank() },
@@ -231,8 +273,7 @@ fun ArticleReaderScreen(
                     }
                 }
             }
-
-            // Короткий анонс показываем только если он не дублирует начало текста и не длинный
+// Короткий анонс показываем только если он не дублирует начало текста и не длинный
             val cleanSub = article.subtitle.trim()
             val cleanCont = article.content.trim()
             if (
@@ -251,38 +292,30 @@ fun ArticleReaderScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-
-            // Иллюстрация компактной высоты
-            if (article.imageUrl.isNotEmpty()) {
+// Иллюстрация (полностью убирается, если её нет или она не загрузилась)
+            var imageLoadFailed by remember(article.imageUrl) { mutableStateOf(false) }
+            if (article.imageUrl.isNotBlank() && !imageLoadFailed) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(176.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { showFullScreenImage = true },
                     contentAlignment = Alignment.Center
                 ) {
                     SubcomposeAsyncImage(
                         model = article.imageUrl,
-                        contentDescription = null,
+                        contentDescription = "Открыть изображение",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        error = {
-                            Icon(
-                                imageVector = RssIcons.Subscriptions,
-                                contentDescription = null,
-                                tint = TextSecondary.copy(alpha = 0.6f),
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
+                        onError = { imageLoadFailed = true }
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(14.dp))
-
-            // Основной текст статьи по абзацам
+// Основной текст статьи по абзацам
             if (cleanCont.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     cleanCont.split("\n\n").filter { it.isNotBlank() }.forEach { paragraph ->
@@ -296,7 +329,6 @@ fun ArticleReaderScreen(
                     }
                 }
             }
-
             if (cleanCont.isEmpty() || cleanCont.length <= cleanSub.length + 20) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -321,11 +353,9 @@ fun ArticleReaderScreen(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(20.dp))
         }
-
-        // Нижняя панель действий читалки
+// Нижняя панель действий читалки
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -368,7 +398,6 @@ fun ArticleReaderScreen(
                         color = DarkPrimary
                     )
                 }
-
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -400,7 +429,6 @@ fun ArticleReaderScreen(
                             modifier = Modifier.size(19.dp)
                         )
                     }
-
                     IconButton(
                         onClick = onReadToggle,
                         modifier = Modifier.size(38.dp)
@@ -412,7 +440,6 @@ fun ArticleReaderScreen(
                             modifier = Modifier.size(19.dp)
                         )
                     }
-
                     IconButton(
                         onClick = { },
                         modifier = Modifier.size(38.dp)
@@ -429,3 +456,221 @@ fun ArticleReaderScreen(
         }
     }
 }
+@Composable
+private fun FullScreenImageViewer(
+    imageUrl: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isSaving by remember { mutableStateOf(false) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val startSaving: () -> Unit = {
+        if (!isSaving) {
+            isSaving = true
+            coroutineScope.launch {
+                val success = saveImageToGallery(context, imageUrl)
+                isSaving = false
+                val message = if (success) {
+                    "Изображение сохранено в галерею"
+                } else {
+                    "Не удалось сохранить изображение"
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+// Запрос разрешения только для Android 9 (API 28) и ниже
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startSaving()
+        } else {
+            Toast.makeText(context, "Нет разрешения на сохранение в память", Toast.LENGTH_SHORT).show()
+        }
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                            }
+                        }
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val newScale = (scale * zoom).coerceIn(1f, 5f)
+                        scale = newScale
+                        offset = if (newScale > 1f) {
+                            offset + pan
+                        } else {
+                            Offset.Zero
+                        }
+                    }
+                }
+        ) {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = "Полноэкранное изображение",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
+                loading = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                }
+            )
+// Верхняя панель управления в просмотрщике
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Закрыть",
+                        tint = Color.White
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        } else {
+                            startSaving()
+                        }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = DownloadIcon,
+                            contentDescription = "Сохранить в галерею",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+private val DownloadIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Download",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero,
+            strokeLineCap = StrokeCap.Butt,
+            strokeLineJoin = StrokeJoin.Miter
+        ) {
+            moveTo(19f, 9f)
+            horizontalLineToRelative(-4f)
+            verticalLineTo(3f)
+            horizontalLineTo(9f)
+            verticalLineToRelative(6f)
+            horizontalLineTo(5f)
+            lineToRelative(7f, 7f)
+            lineToRelative(7f, -7f)
+            close()
+            moveTo(5f, 18f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(14f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(5f)
+            close()
+        }
+    }.build()
+}
+private suspend fun saveImageToGallery(context: Context, imageUrl: String): Boolean =
+    withContext(Dispatchers.IO) {
+        try {
+            val loader = ImageLoader(context)
+            val request = ImageRequest.Builder(context)
+                .data(imageUrl)
+                .allowHardware(false)
+                .build()
+            val result = loader.execute(request)
+            val bitmap = (result as? SuccessResult)?.drawable?.let { drawable ->
+                (drawable as? BitmapDrawable)?.bitmap
+            } ?: return@withContext false
+            val filename = "RSS_${System.currentTimeMillis()}.jpg"
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/RSS_Chsu")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+            val resolver = context.contentResolver
+            val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                ?: return@withContext false
+            resolver.openOutputStream(imageUri)?.use { out ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)) {
+                    return@withContext false
+                }
+            } ?: return@withContext false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(imageUri, contentValues, null, null)
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
