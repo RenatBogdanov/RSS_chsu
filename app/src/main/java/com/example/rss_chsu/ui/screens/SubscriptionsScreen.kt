@@ -692,7 +692,8 @@ fun FolderItemRow(
                             SourceSubItemRow(
                                 source = source,
                                 articleCount = count,
-                                horizontalPadding = 0.dp
+                                horizontalPadding = 0.dp,
+                                onMoveClick = { onMoveSource(source) }
                             )
                         }
                     }
@@ -795,28 +796,19 @@ fun SwipeToDeleteContainer(
         state = dismissState,
         enableDismissFromStartToEnd = false,
         backgroundContent = {
-            val color by androidx.compose.animation.animateColorAsState(
-                targetValue = when (dismissState.targetValue) {
-                    SwipeToDismissBoxValue.EndToStart -> Color(0xFFFF5252)
-                    else -> MaterialTheme.colorScheme.background
-                }, label = "color"
-            )
-
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(color)
+                    .background(Color(0xFFFF5252))
                     .padding(end = 16.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
-                    Text(
-                        text = "Удалить",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "Удалить",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         content = {

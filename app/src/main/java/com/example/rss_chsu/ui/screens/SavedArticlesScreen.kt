@@ -1,11 +1,8 @@
 package com.example.rss_chsu.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +26,6 @@ import com.example.rss_chsu.ui.theme.*
 @Composable
 fun SavedArticlesScreen(
     onArticleClick: (Article) -> Unit,
-    onMenuClick: () -> Unit = {},
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val savedFlow = remember(feedViewModel) { feedViewModel.pagedBookmarks() }
@@ -49,17 +45,7 @@ fun SavedArticlesScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppLogoBar(
-            title = "ЗАКЛАДКИ (${counts.bookmarks})",
-            rightAction = {
-                IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Меню",
-                        tint = DarkPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
+            title = "ЗАКЛАДКИ (${counts.bookmarks})"
         )
 
         when {
@@ -175,23 +161,14 @@ fun SwipeToDeleteBookmarkContainer(
         state = dismissState,
         enableDismissFromStartToEnd = false,
         backgroundContent = {
-            val color by animateColorAsState(
-                targetValue = when (dismissState.targetValue) {
-                    SwipeToDismissBoxValue.EndToStart -> Color(0xFFFC4F4F)
-                    else -> MaterialTheme.colorScheme.background
-                },
-                label = "color"
-            )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(color)
+                    .background(Color(0xFFFC4F4F))
                     .padding(end = 16.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
-                    Text("Удалить", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
+                Text("Удалить", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         },
         content = {
