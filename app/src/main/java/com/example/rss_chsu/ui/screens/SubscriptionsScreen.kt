@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -28,14 +29,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.components.RssIcons
+import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Folder
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.model.Source
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.launch
-
-import androidx.compose.foundation.lazy.rememberLazyListState
 
 @Composable
 fun SubscriptionsScreen(
@@ -62,6 +62,12 @@ fun SubscriptionsScreen(
 
     var rssUrlInput by remember { mutableStateOf("") }
 
+    // ── Кнопка «Наверх» ────────────────────────────────────────────────
+    val showScrollToTop = remember {
+        derivedStateOf { listState.canScrollBackward }
+    }
+    // ───────────────────────────────────────────────────────────────────
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -86,7 +92,6 @@ fun SubscriptionsScreen(
                     .padding(start = 10.dp, end = 2.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Help Button "?"
                 IconButton(
                     onClick = { showHelpDialog = true },
                     modifier = Modifier.size(35.dp)
@@ -101,7 +106,6 @@ fun SubscriptionsScreen(
 
                 Spacer(modifier = Modifier.width(5.dp))
 
-                // TextField for RSS URL
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.CenterStart
@@ -129,7 +133,6 @@ fun SubscriptionsScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Plus IconButton in a Circle
                 IconButton(
                     onClick = {
                         if (rssUrlInput.isNotBlank()) {
@@ -201,57 +204,6 @@ fun SubscriptionsScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-
-                // All Articles Banner Card
-                /*item {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(14.dp)),
-                        color = LightSurfaceContainer
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Icon(
-                                    imageVector = RssIcons.Subscriptions,
-                                    contentDescription = null,
-                                    tint = DarkPrimary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = "Все статьи",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = ChipUnselected
-                            ) {
-                                Text(
-                                    text = "${realArticles.size}",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }*/
-
                 if (realFolders.isNotEmpty()) {
                     item {
                         Row(
@@ -400,6 +352,19 @@ fun SubscriptionsScreen(
                     color = OnDarkPrimary
                 )
             }
+
+            // ── Кнопка «Наверх» ────────────────────────────────────────
+            // Позиционируется справа снизу; «Создать папку» — по центру снизу,
+            // поэтому визуально кнопки не пересекаются.
+            ScrollToTopFab(
+                visible = { showScrollToTop.value },
+                onClick = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(0)
+                    }
+                }
+            )
+            // ───────────────────────────────────────────────────────────
 
             // Create Folder Dialog
             if (showCreateFolderDialog) {
@@ -604,7 +569,6 @@ fun FolderItemRow(
     onDeleteSource: (String) -> Unit,
     onMoveSource: (Source) -> Unit
 ) {
-    // Каждая статья привязана ровно к одному источнику, поэтому сумма по источникам папки точна
     val totalFolderArticles = sourcesInFolder.sumOf { it.articleCount }
 
     Column(
@@ -669,7 +633,6 @@ fun FolderItemRow(
             }
         }
 
-        // Sub-sources inside expanded folder
         AnimatedVisibility(visible = folder.isExpanded) {
             Column(
                 modifier = Modifier
@@ -726,7 +689,6 @@ fun SourceSubItemRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.weight(1f)
         ) {
-            // Logo Badge
             Box(
                 modifier = Modifier
                     .size(32.dp)

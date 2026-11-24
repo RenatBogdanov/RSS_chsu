@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.PopularSources
 import com.example.rss_chsu.ui.model.RecommendedSource
@@ -47,7 +48,7 @@ import com.example.rss_chsu.ui.model.SourceRecommendationsViewModel
 import com.example.rss_chsu.ui.model.extractDomainKeywords
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.delay
-
+import kotlinx.coroutines.launch
 
 /** Сколько источников показывать в каждой категории, пока она не раскрыта целиком. */
 private const val SECTION_PREVIEW_COUNT = 5
@@ -61,6 +62,13 @@ fun SearchSourcesScreen(
     var selectedCategory by remember { mutableStateOf<SourceCategory?>(null) }
     var scrollRequest by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    // ── Кнопка «Наверх» ────────────────────────────────────────────────
+    val showScrollToTop = remember {
+        derivedStateOf { listState.canScrollBackward }
+    }
+    // ───────────────────────────────────────────────────────────────────
 
     val realFolders by RssRepository.folders.collectAsState()
     val realSources by RssRepository.sources.collectAsState()
@@ -180,8 +188,6 @@ fun SearchSourcesScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // 2) Шапка поиска: поиск на всю ширину, высота 40.dp, шрифт 14.sp, иконка 18.dp
-        //    Заголовок «ПОИСК» убран внутри TopAppLogoBar (см. примечание в конце).
         TopAppLogoBar(
             content = {
                 Surface(
@@ -250,7 +256,6 @@ fun SearchSourcesScreen(
             }
         )
 
-        // 3) LazyColumn обёрнут в Box, плашка — оверлеем поверх списка
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
@@ -411,6 +416,17 @@ fun SearchSourcesScreen(
                 modifier = Modifier.align(Alignment.TopCenter),
                 onDismiss = { bannerError = null }
             )
+
+            // ── Кнопка «Наверх» ────────────────────────────────────────
+            ScrollToTopFab(
+                visible = { showScrollToTop.value },
+                onClick = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(0)
+                    }
+                }
+            )
+            // ───────────────────────────────────────────────────────────
         }
     }
 }
@@ -428,7 +444,6 @@ private fun BoxScope.SubscriptionErrorBanner(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
 ) {
-    // Ключ по message — чтобы при новом сообщении состояние свайпа сбрасывалось
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value != SwipeToDismissBoxValue.Settled) {
@@ -438,7 +453,6 @@ private fun BoxScope.SubscriptionErrorBanner(
         }
     )
 
-    // Сбрасываем состояние свайпа, когда приходит новое сообщение
     LaunchedEffect(message) {
         if (message != null) {
             dismissState.reset()

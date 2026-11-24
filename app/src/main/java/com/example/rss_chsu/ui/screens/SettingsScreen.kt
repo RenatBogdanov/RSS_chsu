@@ -26,9 +26,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen() {
@@ -52,181 +54,182 @@ fun SettingsScreen() {
             title = "НАСТРОЙКИ"
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "Оформление",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
+        // ── Кнопка «Наверх» ────────────────────────────────────────────
+        val scrollState = rememberScrollState()
+        val coroutineScope = rememberCoroutineScope()
+        val showScrollToTop = remember {
+            derivedStateOf { scrollState.value > 0 }
+        }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = ChipUnselected.copy(alpha = 0.6f),
-                border = BorderStroke(1.dp, LightCardBorder.copy(alpha = 0.5f))
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Text(
+                    text = "Оформление",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = ChipUnselected.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, LightCardBorder.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ThemeOptionItem(
+                            title = "Светлая",
+                            primarySwatch = Color(0xFFFFFFFF),
+                            secondarySwatch = Color(0xFF111113),
+                            isSelected = currentTheme == AppTheme.LIGHT,
+                            onClick = { ThemeManager.setAppTheme(context, AppTheme.LIGHT) }
+                        )
+                        ThemeOptionItem(
+                            title = "Тёмная",
+                            primarySwatch = Color(0xFF1E1E1E),
+                            secondarySwatch = Color(0xFFFFFFFF),
+                            isSelected = currentTheme == AppTheme.DARK,
+                            onClick = { ThemeManager.setAppTheme(context, AppTheme.DARK) }
+                        )
+                        ThemeOptionItem(
+                            title = "GTA VI",
+                            primarySwatch = Color(0xFF1D1238),
+                            secondarySwatch = Color(0xFFFF3E9D),
+                            isSelected = currentTheme == AppTheme.GTA_VI,
+                            onClick = { ThemeManager.setAppTheme(context, AppTheme.GTA_VI) }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Вид карточек в ленте",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp, horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                        .background(ChipUnselected, RoundedCornerShape(12.dp))
+                        .height(40.dp)
+                        .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ThemeOptionItem(
-                        title = "Светлая",
-                        primarySwatch = Color(0xFFFFFFFF),
-                        secondarySwatch = Color(0xFF111113),
-                        isSelected = currentTheme == AppTheme.LIGHT,
-                        onClick = { ThemeManager.setAppTheme(context, AppTheme.LIGHT) }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (!isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
+                            .clickable { ThemeManager.setLargeCards(context, false) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Компактный",
+                            fontSize = 13.sp,
+                            fontWeight = if (!isLargeCards) FontWeight.Bold else FontWeight.Medium,
+                            color = if (!isLargeCards) TextPrimary else TextSecondary
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
+                            .clickable { ThemeManager.setLargeCards(context, true) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Крупный",
+                            fontSize = 13.sp,
+                            fontWeight = if (isLargeCards) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isLargeCards) TextPrimary else TextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Размер кэша статей",
+                        fontSize = 14.sp,
+                        color = TextPrimary.copy(alpha = 0.75f)
                     )
-                    ThemeOptionItem(
-                        title = "Тёмная",
-                        primarySwatch = Color(0xFF1E1E1E),
-                        secondarySwatch = Color(0xFFFFFFFF),
-                        isSelected = currentTheme == AppTheme.DARK,
-                        onClick = { ThemeManager.setAppTheme(context, AppTheme.DARK) }
+                    Text(
+                        text = Formatter.formatShortFileSize(context, cacheSizeBytes),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
                     )
-                    ThemeOptionItem(
-                        title = "GTA VI",
-                        primarySwatch = Color(0xFF1D1238),
-                        secondarySwatch = Color(0xFFFF3E9D),
-                        isSelected = currentTheme == AppTheme.GTA_VI,
-                        onClick = { ThemeManager.setAppTheme(context, AppTheme.GTA_VI) }
+                }
+
+                OutlinedButton(
+                    onClick = { RssRepository.addAllPopularSources() },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                ) {
+                    Text(
+                        "Подписаться на 50 источников",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = { RssRepository.clearAllData() },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                ) {
+                    Text(
+                        "Сбросить все данные",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = { showDeleteAppDialog = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                ) {
+                    Text(
+                        "Удалить приложение",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
-            Text(
-                text = "Вид карточек в ленте",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
+            ScrollToTopFab(
+                visible = { showScrollToTop.value },
+                onClick = { coroutineScope.launch { scrollState.animateScrollTo(0) } }
             )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(ChipUnselected, RoundedCornerShape(12.dp))
-                    .height(40.dp)
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (!isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
-                        .clickable { ThemeManager.setLargeCards(context, false) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Компактный",
-                        fontSize = 13.sp,
-                        fontWeight = if (!isLargeCards) FontWeight.Bold else FontWeight.Medium,
-                        color = if (!isLargeCards) TextPrimary else TextSecondary
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isLargeCards) MaterialTheme.colorScheme.surface else Color.Transparent)
-                        .clickable { ThemeManager.setLargeCards(context, true) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Крупный",
-                        fontSize = 13.sp,
-                        fontWeight = if (isLargeCards) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isLargeCards) TextPrimary else TextSecondary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Показываем объём полезных данных статей
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Размер кэша статей",
-                    fontSize = 14.sp,
-                    color = TextPrimary.copy(alpha = 0.75f)
-                )
-                Text(
-                    text = Formatter.formatShortFileSize(context, cacheSizeBytes),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-            }
-
-            OutlinedButton(
-                onClick = {
-                    RssRepository.addAllPopularSources()
-                },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.Red
-                )
-            ) {
-                Text(
-                    "Подписаться на 50 источников",
-                    color = Color.Red,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            OutlinedButton(
-                onClick = {
-                    // Полная очистка всех данных (подписки, статьи, папки).
-                    RssRepository.clearAllData()
-                },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.Red
-                )
-            ) {
-                Text(
-                    "Сбросить все данные",
-                    color = Color.Red,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            OutlinedButton(
-                onClick = {
-                    showDeleteAppDialog = true
-                },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.Red
-                )
-            ) {
-                Text(
-                    "Удалить приложение",
-                    color = Color.Red,
-                    fontWeight = FontWeight.Medium
-                )
-            }
         }
+        // ───────────────────────────────────────────────────────────────
 
         if (showDeleteAppDialog) {
             AlertDialog(
@@ -282,9 +285,7 @@ private fun ThemeOptionItem(
                 indication = null
             ) { onClick() }
     ) {
-        Box(
-            modifier = Modifier.size(64.dp)
-        ) {
+        Box(modifier = Modifier.size(64.dp)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -310,10 +311,7 @@ private fun ThemeOptionItem(
                         )
                         close()
                     }
-                    drawPath(
-                        path = path,
-                        color = secondarySwatch
-                    )
+                    drawPath(path = path, color = secondarySwatch)
                 }
             }
 
@@ -324,11 +322,7 @@ private fun ThemeOptionItem(
                         .align(Alignment.BottomEnd)
                         .clip(CircleShape)
                         .background(badgeBgColor)
-                        .border(
-                            width = 1.dp,
-                            color = LightSurface,
-                            shape = CircleShape
-                        ),
+                        .border(width = 1.dp, color = LightSurface, shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

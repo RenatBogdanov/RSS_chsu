@@ -3,6 +3,7 @@ package com.example.rss_chsu.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,11 +19,13 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import com.example.rss_chsu.data.local.SourceNameIndex
+import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun SavedArticlesScreen(
@@ -39,7 +42,6 @@ fun SavedArticlesScreen(
     val sourceNameIndex: SourceNameIndex = remember(sourceNameEntries) {
         SourceNameIndex(SourceNameResolver.indexForEntries(sourceNameEntries))
     }
-
 
     Column(
         modifier = Modifier
@@ -86,59 +88,79 @@ fun SavedArticlesScreen(
                 }
             }
             else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 120.dp)
-                ) {
-                    items(
-                        count = savedArticles.itemCount,
-                        key = savedArticles.itemKey { it.id },
-                        contentType = savedArticles.itemContentType { "saved_article" }
-                    ) { index ->
-                        // Элемент уже преобразован из ArticleListItem в Article
-                        // на Dispatchers.Default внутри ArticlePagingRepository.
-                        val article = savedArticles[index]
-                        if (article != null) {
-                            SwipeToDeleteBookmarkContainer(
-                                key = article.id,
-                                onDelete = { feedViewModel.onBookmarkClick(article.id) }
-                            ) {
-                                FeedArticleRow(
-                                    article = article,
-                                    sourceNameIndex = sourceNameIndex,
-                                    onClick = { onArticleClick(article) }
+                // ── Кнопка «Наверх» ────────────────────────────────────────
+                val listState = rememberLazyListState()
+                val coroutineScope = rememberCoroutineScope()
+                val showScrollToTop = remember {
+                    derivedStateOf { listState.canScrollBackward }
+                }
+
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 120.dp)
+                    ) {
+                        items(
+                            count = savedArticles.itemCount,
+                            key = savedArticles.itemKey { it.id },
+                            contentType = savedArticles.itemContentType { "saved_article" }
+                        ) { index ->
+                            val article = savedArticles[index]
+                            if (article != null) {
+                                SwipeToDeleteBookmarkContainer(
+                                    key = article.id,
+                                    onDelete = { feedViewModel.onBookmarkClick(article.id) }
+                                ) {
+                                    FeedArticleRow(
+                                        article = article,
+                                        sourceNameIndex = sourceNameIndex,
+                                        onClick = { onArticleClick(article) }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (savedArticles.loadState.append is LoadState.Loading) {
+                            item(key = "saved_loading") {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(20.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = DarkPrimary)
+                                }
+                            }
+                        }
+                        if (savedArticles.loadState.append is LoadState.Error) {
+                            item(key = "saved_retry") {
+                                TextButton(
+                                    onClick = { savedArticles.retry() },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Не удалось загрузить. Повторить", color = DarkPrimary)
+                                }
+                            }
+                        }
+                        val append = savedArticles.loadState.append
+                        if (append is LoadState.NotLoading && append.endOfPaginationReached && savedArticles.itemCount > 0) {
+                            item(key = "saved_end") {
+                                Text(
+                                    text = "Конец списка.",
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                    fontSize = 14.sp,
+                                    color = TextSecondary,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
 
-                    if (savedArticles.loadState.append is LoadState.Loading) {
-                        item(key = "saved_loading") {
-                            Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = DarkPrimary)
-                            }
-                        }
-                    }
-                    if (savedArticles.loadState.append is LoadState.Error) {
-                        item(key = "saved_retry") {
-                            TextButton(onClick = { savedArticles.retry() }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Не удалось загрузить. Повторить", color = DarkPrimary)
-                            }
-                        }
-                    }
-                    val append = savedArticles.loadState.append
-                    if (append is LoadState.NotLoading && append.endOfPaginationReached && savedArticles.itemCount > 0) {
-                        item(key = "saved_end") {
-                            Text(
-                                text = "Конец списка.",
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                                fontSize = 14.sp,
-                                color = TextSecondary,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+                    ScrollToTopFab(
+                        visible = { showScrollToTop.value },
+                        onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } }
+                    )
                 }
+                // ───────────────────────────────────────────────────────────
             }
         }
     }

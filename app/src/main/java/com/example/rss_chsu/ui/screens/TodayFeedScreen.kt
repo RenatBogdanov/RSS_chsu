@@ -1,10 +1,5 @@
 package com.example.rss_chsu.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,7 +13,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,6 +42,7 @@ import com.example.rss_chsu.data.local.ArticlePagingRepository
 import com.example.rss_chsu.data.local.ArticleStatus
 import com.example.rss_chsu.data.local.SourceNameIndex
 import com.example.rss_chsu.ui.components.RssIcons
+import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.FeedViewModel
@@ -581,34 +576,6 @@ private fun FeedPage(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun BoxScope.ScrollToTopFab(
-    visible: () -> Boolean,
-    onClick: () -> Unit
-) {
-    AnimatedVisibility(
-        visible = visible(),
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = 16.dp, bottom = 16.dp),
-        enter = fadeIn() + scaleIn(initialScale = 0.8f),
-        exit = fadeOut() + scaleOut(targetScale = 0.8f)
-    ) {
-        SmallFloatingActionButton(
-            onClick = onClick,
-            containerColor = DarkPrimary,
-            contentColor = OnDarkPrimary
-        ) {
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowUp,
-                contentDescription = "Наверх",
-                tint = OnDarkPrimary,
-                modifier = Modifier.size(22.dp)
-            )
-        }
     }
 }
 
