@@ -642,6 +642,7 @@ fun FeaturedArticleCard(
     sourceNameIndex: SourceNameIndex = SourceNameIndex()
 ) {
     val context = LocalContext.current
+    val currentFont = LocalAppFont.current.toFontFamily()   // ← новое
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -719,7 +720,7 @@ fun FeaturedArticleCard(
             Text(
                 text = article.title,
                 fontSize = 16.sp,
-                fontFamily = FontFamily.Serif,
+                fontFamily = currentFont,                    // ← было FontFamily.Serif
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
                 lineHeight = 21.sp,
@@ -754,6 +755,7 @@ fun FeedArticleRow(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val currentFont = LocalAppFont.current.toFontFamily()   // ← новое
 
     Column(
         modifier = Modifier
@@ -797,7 +799,7 @@ fun FeedArticleRow(
                 Text(
                     text = article.title,
                     fontSize = 14.sp,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = currentFont,                // ← было FontFamily.Serif
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
                     maxLines = 2,

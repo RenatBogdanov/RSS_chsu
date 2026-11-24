@@ -7,21 +7,47 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** Шрифт для заголовков и тела статей. */
+enum class AppFont {
+    SANS,   // без засечек
+    SERIF,  // с засечками (по умолчанию)
+    MONO    // моноширинный
+}
+
+/** Провайдится один раз в MainScreen; все экраны читают через LocalAppFont.current. */
+val LocalAppFont = staticCompositionLocalOf { AppFont.SERIF }
+
+fun AppFont.toFontFamily(): FontFamily = when (this) {
+    AppFont.SANS -> FontFamily.SansSerif
+    AppFont.SERIF -> FontFamily.Serif
+    AppFont.MONO -> FontFamily.Monospace
+}
 
 object ThemeManager {
     private const val PREFS_NAME = "app_theme_prefs"
     private const val KEY_IS_DARK_THEME = "is_dark_theme"
     private const val KEY_APP_THEME = "app_theme"
     private const val KEY_IS_LARGE_CARDS = "is_large_cards"
+    private const val KEY_IS_PINTEREST_MODE = "is_pinterest_mode"
+    private const val KEY_APP_FONT = "app_font"
 
     private val _appTheme = MutableStateFlow(AppTheme.LIGHT)
     val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
 
     private val _isLargeCards = MutableStateFlow(false)
     val isLargeCards: StateFlow<Boolean> = _isLargeCards.asStateFlow()
+
+    private val _isPinterestMode = MutableStateFlow(false)
+    val isPinterestMode: StateFlow<Boolean> = _isPinterestMode.asStateFlow()
+
+    private val _appFont = MutableStateFlow(AppFont.SERIF)
+    val appFont: StateFlow<AppFont> = _appFont.asStateFlow()
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -45,8 +71,17 @@ object ThemeManager {
             migrated
         }
 
+        val savedFont = prefs.getString(KEY_APP_FONT, null)
+        val resolvedFont = if (savedFont != null) {
+            runCatching { AppFont.valueOf(savedFont) }.getOrDefault(AppFont.SERIF)
+        } else {
+            AppFont.SERIF
+        }
+
         _appTheme.value = resolvedTheme
         _isLargeCards.value = prefs.getBoolean(KEY_IS_LARGE_CARDS, false)
+        _isPinterestMode.value = prefs.getBoolean(KEY_IS_PINTEREST_MODE, false)
+        _appFont.value = resolvedFont
         syncSystemNightMode(context, resolvedTheme != AppTheme.LIGHT)
     }
 
@@ -69,6 +104,22 @@ object ThemeManager {
         _isLargeCards.value = isLarge
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_IS_LARGE_CARDS, isLarge).apply()
+    }
+
+    fun setPinterestMode(context: Context, enabled: Boolean) {
+        if (_isPinterestMode.value == enabled) return
+
+        _isPinterestMode.value = enabled
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_IS_PINTEREST_MODE, enabled).apply()
+    }
+
+    fun setAppFont(context: Context, font: AppFont) {
+        if (_appFont.value == font) return
+
+        _appFont.value = font
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_APP_FONT, font.name).apply()
     }
 
     fun applyPendingIconChange(context: Context) {

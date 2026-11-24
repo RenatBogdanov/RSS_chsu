@@ -56,7 +56,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -102,17 +101,9 @@ fun ArticleReaderScreen(
         return
     }
 
-    // ── Стек навигации по рекомендациям ────────────────────────────────
-    // Хранит статьи, с которых пользователь «спрыгнул» по рекомендации.
-    // При нажатии «Назад» возвращаемся к последней из них.
     val navigationStack = remember { mutableStateListOf<String>() }
-
-    // Флаг: true, если смена страницы вызвана программно (клик по рекомендации).
-    // Позволяет отличать «ручной свайп» (стек надо очистить) от «переход по ссылке».
     var isProgrammaticNavigation by remember { mutableStateOf(false) }
-    // ───────────────────────────────────────────────────────────────────
 
-    // Состояние для свайпа вниз
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     val animatedDragOffset by animateFloatAsState(
         targetValue = dragOffsetY,
@@ -137,7 +128,6 @@ fun ArticleReaderScreen(
     val currentArticle = articles.getOrNull(pagerState.currentPage) ?: articles.first()
     val isCurrentBookmarked = articleStatuses[currentArticle.id]?.isBookmarked ?: currentArticle.isBookmarked
 
-    // Обработчик «Назад» — общий для системной кнопки и для кнопки в шапке.
     val handleBack: () -> Unit = {
         if (navigationStack.isNotEmpty()) {
             val prevId = navigationStack.removeAt(navigationStack.lastIndex)
@@ -145,16 +135,11 @@ fun ArticleReaderScreen(
             if (prevIndex >= 0) {
                 onArticleChanged(prevId)
                 isProgrammaticNavigation = true
-                // Возврат по стеку всегда программный — стек не должен очищаться
-                // от смены currentPage.
                 kotlinx.coroutines.MainScope().launch {
-                    // Возврат «по истории» делаем мгновенным, без анимации:
-                    // пользователь ожидает резкого перехода к тому месту, откуда пришёл.
                     pagerState.scrollToPage(prevIndex)
                     isProgrammaticNavigation = false
                 }
             } else {
-                // Статью успели удалить из кэша — просто закрываем читалку.
                 onClose()
             }
         } else {
@@ -162,20 +147,16 @@ fun ArticleReaderScreen(
         }
     }
 
-    // Системная кнопка «Назад» — только пока читалка в композиции.
     BackHandler(enabled = true) { handleBack() }
 
-    // Сообщаем наверх о смене статьи + различаем ручной свайп и программный переход
     LaunchedEffect(pagerState.currentPage) {
         val id = articles.getOrNull(pagerState.currentPage)?.id ?: return@LaunchedEffect
         if (!isProgrammaticNavigation) {
-            // Пользователь свайпнул вручную — история рекомендаций больше не актуальна.
             navigationStack.clear()
         }
         onArticleChanged(id)
     }
 
-    // Если снаружи пришёл новый initialArticleId — плавно скроллим пейджер к нему
     LaunchedEffect(initialArticleId, articles.size) {
         val target = articles.indexOfFirst { it.id == initialArticleId }
         if (target >= 0 && target != pagerState.currentPage) {
@@ -183,12 +164,10 @@ fun ArticleReaderScreen(
         }
     }
 
-    // Отмечаем прочитанной статью, которая сейчас на экране
     LaunchedEffect(currentArticle.id) {
         onReadArticle(currentArticle.id)
     }
 
-    // Считаем «похожие» при открытии/смене статьи
     LaunchedEffect(currentArticle.id) {
         onLoadRecommendations(currentArticle)
     }
@@ -201,11 +180,9 @@ fun ArticleReaderScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Показываем рекомендации только когда они посчитаны именно для текущей статьи
     val recommendationsForCurrent =
         if (recommendedFor == currentArticle.id) recommendedArticles else emptyList()
 
-    // Клик по рекомендации: запоминаем, откуда ушли, и переключаем пейджер.
     val jumpToArticle: (String) -> Unit = { targetId ->
         val targetIndex = articles.indexOfFirst { it.id == targetId }
         if (targetIndex >= 0 && targetIndex != pagerState.currentPage) {
@@ -213,7 +190,6 @@ fun ArticleReaderScreen(
             isProgrammaticNavigation = true
             coroutineScope.launch {
                 if (abs(targetIndex - pagerState.currentPage) > 2) {
-                    // Далеко — без анимации, чтобы не мельтешить через 5 промежуточных статей.
                     pagerState.scrollToPage(targetIndex)
                 } else {
                     pagerState.animateScrollToPage(targetIndex)
@@ -256,7 +232,6 @@ fun ArticleReaderScreen(
             }
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Визуальный маркер для свайпа
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -273,7 +248,6 @@ fun ArticleReaderScreen(
             )
         }
 
-        // Верхняя навигационная панель
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -285,7 +259,7 @@ fun ArticleReaderScreen(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = handleBack)   // ← теперь через стек
+                    .clickable(onClick = handleBack)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -317,7 +291,6 @@ fun ArticleReaderScreen(
             }
         }
 
-        // Горизонтальный пейджер по всем статьям
         HorizontalPager(
             state = pagerState,
             beyondViewportPageCount = 1,
@@ -511,6 +484,7 @@ private fun ArticleContent(
     onRecommendationClick: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val currentFont = LocalAppFont.current.toFontFamily()
     var showFullScreenImage by remember(article.id) { mutableStateOf(false) }
 
     val articleUrl = remember(article.id) {
@@ -574,7 +548,7 @@ private fun ArticleContent(
         Text(
             text = article.title,
             fontSize = 22.sp,
-            fontFamily = FontFamily.Serif,
+            fontFamily = currentFont,
             fontWeight = FontWeight.Bold,
             color = TextPrimary,
             lineHeight = 28.sp
@@ -662,7 +636,7 @@ private fun ArticleContent(
                     Text(
                         text = paragraph.trim(),
                         fontSize = 17.sp,
-                        fontFamily = FontFamily.Serif,
+                        fontFamily = currentFont,
                         color = TextPrimary,
                         lineHeight = 26.sp
                     )
@@ -691,7 +665,6 @@ private fun ArticleContent(
             }
         }
 
-        // Блок «Похожие статьи»
         if (recommendations.isNotEmpty()) {
             SimilarArticlesBlock(
                 recommendations = recommendations,
@@ -746,6 +719,8 @@ private fun SimilarArticleRow(
     article: Article,
     onClick: () -> Unit
 ) {
+    val currentFont = LocalAppFont.current.toFontFamily()
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -798,7 +773,7 @@ private fun SimilarArticleRow(
             Text(
                 text = article.title,
                 fontSize = 14.sp,
-                fontFamily = FontFamily.Serif,
+                fontFamily = currentFont,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
                 lineHeight = 19.sp,

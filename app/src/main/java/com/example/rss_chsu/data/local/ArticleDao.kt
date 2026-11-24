@@ -7,20 +7,15 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+/** Лёгкая проекция для one-time чистки дублей по нормализованному id. */
+data class ArticleRowForDedup(
+    val id: String,
+    val isBookmarked: Boolean
+)
+
 @Dao
 interface ArticleDao {
 
-    /**
-     * Индекс для рекомендаций: без поля content и без статусов (isRead/isBookmarked).
-     *
-     * Статусы НЕ включены намеренно: любой UPDATE isRead/isBookmarked инвалидировал бы
-     * этот курсор → Room перечитывал бы все 500 строк → Kotlin заново маппил бы 500
-     * Article (с keywords.split) → recommendationEngine пересобирался бы → каскад
-     * до трёх FeedPage. Для 120 Гц это самый дорогой путь в приложении.
-     *
-     * Статусы для UI берутся отдельным лёгким потоком observeStatuses() (3 колонки).
-     * LIMIT 500 — список нужен только вкладке «Для вас» (топ-100) и подпискам.
-     */
     @Query(
         """
         SELECT id, title, subtitle, sourceName, category, author, pubDateFormatted,
@@ -32,15 +27,9 @@ interface ArticleDao {
     )
     fun observeIndex(): Flow<List<RecommendationArticleRow>>
 
-    /**
-     * Лёгкий поток статусов: только id + два флага, без текстов и картинок.
-     * Пересчитывается на каждый UPDATE, но это O(rows) по трём колонкам, без скана
-     * content и без пересборки рекомендаций — на порядок дешевле старого observeIndex.
-     */
     @Query("SELECT id, isBookmarked, isRead FROM articles")
     fun observeStatuses(): Flow<List<ArticleStatus>>
 
-    /** Точные счётчики вычисляет SQLite, а не Compose/Kotlin по всему списку. */
     @Query(
         """
         SELECT
@@ -52,7 +41,6 @@ interface ArticleDao {
     )
     fun observeArticleCounts(): Flow<ArticleCounts>
 
-    /** Точные счётчики с учётом выбранных фильтров по источникам и папкам. */
     @Query(
         """
         SELECT
@@ -77,7 +65,6 @@ interface ArticleDao {
         folderNames: List<String>
     ): Flow<ArticleCounts>
 
-    /** Точные счётчики по каждому источнику; используются для подписок и папок. */
     @Query(
         """
         SELECT
@@ -91,7 +78,6 @@ interface ArticleDao {
     )
     fun observeSourceCounts(): Flow<List<SourceCount>>
 
-    /** Постраничная лента: только поля, нужные карточке, без content и keywords. */
     @Query(
         """
         SELECT id, title, subtitle, sourceName, category, author, pubDateFormatted,
@@ -159,7 +145,6 @@ interface ArticleDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(items: List<ArticleEntity>): List<Long>
 
-    // Привязка старых записей, у которых до миграции не было sourceId.
     @Query("UPDATE articles SET sourceId = :sourceId WHERE id IN (:ids) AND sourceId = ''")
     suspend fun adoptArticles(sourceId: String, ids: List<String>): Int
 
@@ -178,11 +163,9 @@ interface ArticleDao {
     @Query("UPDATE articles SET isRead = 1 - isRead WHERE id = :id")
     suspend fun toggleRead(id: String)
 
-    /** Удаляет устаревшие статьи, но сохраняет закладки. */
     @Query("DELETE FROM articles WHERE isBookmarked = 0 AND fetchedAt < :minFetchedAt")
     suspend fun deleteOlderThan(minFetchedAt: Long): Int
 
-    /** Оставляет max самых свежих статей без закладок в каждом источнике. */
     @Query(
         """
         DELETE FROM articles
@@ -199,7 +182,6 @@ interface ArticleDao {
     )
     suspend fun deleteOverLimitForSource(sourceId: String, max: Int): Int
 
-    /** Оставляет max самых свежих статей без закладок суммарно по приложению. */
     @Query(
         """
         DELETE FROM articles
@@ -218,15 +200,19 @@ interface ArticleDao {
     @Query("DELETE FROM articles WHERE sourceId = :sourceId AND isBookmarked = 0")
     suspend fun deleteNonBookmarkedBySource(sourceId: String): Int
 
-    /** Удаляет не-закладки, источники которых больше не находятся в подписках. */
     @Query("DELETE FROM articles WHERE isBookmarked = 0 AND sourceId NOT IN (SELECT domain FROM sources)")
     suspend fun deleteOrphanUnbookmarkedArticles(): Int
 
     @Query("DELETE FROM articles")
     suspend fun deleteAll(): Int
 
-    // observeCacheSizeBytes() удалён: SUM(LENGTH(CAST(content AS BLOB))) сканировал content
-    // всей таблицы на каждое изменение (markAsRead, toggleBookmark, insertIgnore) и
-    // выполнялся на том же queryExecutor, что и Paging. Заменён на approxSize через
-    // PRAGMA page_count * page_size в RssRepository.refreshCacheSize().
+    // ── Чистка дублей по нестабильному id ──────────────────────────────
+    @Query("SELECT id, isBookmarked FROM articles")
+    suspend fun getAllForDedup(): List<ArticleRowForDedup>
+
+    @Query("DELETE FROM articles WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>): Int
+
+    @Query("UPDATE articles SET id = :newId WHERE id = :oldId")
+    suspend fun updateId(oldId: String, newId: String)
 }

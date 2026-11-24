@@ -77,7 +77,7 @@ class FeedViewModel : ViewModel() {
         recommendationEngine,
         recommendationCorpus
     ) { engine, corpus ->
-        engine.getPersonalized(corpus, limit = 100)
+        engine.getPersonalized(corpus.dedupForDisplay(), limit = 100)
     }
         .distinctUntilChangedBy { list -> list.map(Article::id) }
         .flowOn(Dispatchers.Default)
@@ -172,5 +172,19 @@ class FeedViewModel : ViewModel() {
     /** Переключает закладку у статьи. */
     fun toggleBookmark(articleId: String) {
         RssRepository.toggleBookmark(articleId)
+    }
+
+    private fun List<Article>.dedupForDisplay(): List<Article> {
+        val seen = HashSet<String>()
+        return buildList(size) {
+            for (article in this@dedupForDisplay) {
+                val key = buildString {
+                    append(article.sourceId.lowercase())
+                    append('|')
+                    append(article.title.trim().lowercase().replace(Regex("\\s+"), " "))
+                }
+                if (seen.add(key)) add(article)
+            }
+        }
     }
 }

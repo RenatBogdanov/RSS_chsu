@@ -10,8 +10,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import com.example.rss_chsu.ui.model.KtorClient
+import com.example.rss_chsu.ui.model.OnboardingManager
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.screens.MainScreen
+import com.example.rss_chsu.ui.screens.OnboardingScreen
 import com.example.rss_chsu.ui.theme.RSS_chsuTheme
 import com.example.rss_chsu.ui.theme.ThemeManager
 import io.ktor.client.request.*
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.init(applicationContext)
+        OnboardingManager.init(applicationContext)
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
@@ -52,9 +55,18 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val currentTheme by ThemeManager.appTheme.collectAsState()
+            val onboardingDone by OnboardingManager.isCompleted.collectAsState()
 
             RSS_chsuTheme(appTheme = currentTheme) {
-                MainScreen()
+                if (onboardingDone) {
+                    MainScreen()
+                } else {
+                    // onComplete не нужен — OnboardingManager.setCompleted уже
+                    // обновляет StateFlow, и setContent реактивно переключится
+                    // на MainScreen. Параметр оставлен для расширяемости
+                    // (например, аналитики).
+                    OnboardingScreen(onComplete = {})
+                }
             }
         }
     }

@@ -1,17 +1,19 @@
 package com.example.rss_chsu.ui.model
 
 import android.text.Html
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Превращает RSS / Atom в статьи приложения.[cite: 1]
+ * Превращает RSS / Atom в статьи приложения.
  *
- * 1. Основной разбор: настоящий XML-парсер ([XmlFeedParser]).[cite: 1]
- * 2. Запасной разбор регулярными выражениями: только если лента не читается как XML.[cite: 1]
- * 3. Из сырых данных ([RawItem]) собираются [Article]: чистый текст с абзацами, анонс, картинка, рубрика, дата.[cite: 1]
+ * 1. Основной разбор: настоящий XML-парсер ([XmlFeedParser]).
+ * 2. Запасной разбор регулярными выражениями: только если лента не читается как XML.
+ * 3. Из сырых данных ([RawItem]) собираются [Article]: чистый текст с абзацами,
+ *    анонс, картинка, рубрика, дата, СТАБИЛЬНЫЙ id.
  */
 object RssParser {
 
@@ -32,13 +34,66 @@ object RssParser {
     )
 
     // ---------------------------------------------------------------------------------------------
-    // Очистка текста
+    // Стабилизация id
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * Html.fromHtml схлопывает переводы строк, поэтому на время декодирования сущностей
-     * переводы строк заменяются этим служебным символом.[cite: 1]
+     * Канонизирует URL-подобный id: убирает tracking-параметры, фрагмент,
+     * хвостовой слэш, приводит host к нижнему регистру. Гарантирует, что
+     * `https://site.ru/a?utm_source=rss` и `https://site.ru/a?utm_source=tg`
+     * дадут один и тот же id.
+     *
+     * Для не-URL значений (guid-хэши, fallback-строки) возвращает вход без
+     * изменений — там нечего стабилизировать на уровне строки.
      */
+    fun normalizeArticleId(rawId: String): String {
+        if (!rawId.startsWith("http://") && !rawId.startsWith("https://")) return rawId
+
+        return try {
+            val uri = URI(rawId)
+            val host = uri.host?.lowercase() ?: return rawId
+
+            val filteredQuery = uri.rawQuery
+                ?.split("&")
+                ?.filter { it.isNotBlank() }
+                ?.filter { param ->
+                    val key = param.substringBefore("=", "").lowercase()
+                    key !in TRACKING_PARAMS
+                }
+                ?.joinToString("&")
+                ?.takeIf { it.isNotEmpty() }
+
+            // Ручная сборка: URI(...)-конструктор percent-escapes `%` в query,
+            // что ломает уже-кодированные параметры. Здесь строка сохраняется как есть.
+            buildString {
+                append(uri.scheme?.lowercase() ?: "https")
+                append("://")
+                uri.rawUserInfo?.let { append(it); append("@") }
+                append(host)
+                if (uri.port != -1) {
+                    append(":")
+                    append(uri.port)
+                }
+                val path = uri.rawPath?.trimEnd('/')
+                if (path.isNullOrEmpty()) append("/") else append(path)
+                filteredQuery?.let { append("?"); append(it) }
+            }
+        } catch (_: Exception) {
+            rawId
+        }
+    }
+
+    private val TRACKING_PARAMS = setOf(
+        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+        "fbclid", "gclid", "yclid", "dclid",
+        "ref", "referrer", "source", "from", "share", "sh", "feature",
+        "rnd", "rand", "random", "cachebust", "cache_bust", "v", "t", "ts", "_"
+    )
+
+    // ---------------------------------------------------------------------------------------------
+    // Очистка текста
+    // ---------------------------------------------------------------------------------------------
+
     private const val NL = "\uE000"
 
     private val escapedHtmlRegex = Regex(
@@ -59,10 +114,8 @@ object RssParser {
     private val wordSplitRegex = Regex("\\s+")
     private val multiSpaceRegex = Regex(" {2,}")
 
-    /** Символ-заменитель объекта (остаётся после <img>), мусорные нули и управляющие коды.[cite: 1] */
     private val garbageRegex = Regex("[\\uFFFC\\uFFFD\\uFEFF\\u200B-\\u200D\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]")
 
-    /** Рекламные хвосты, которые издания дописывают в конец текста.[cite: 1] */
     private val promoSuffixes = listOf(
         Regex("\\s*Оставайтесь на связи с РБК[^\\n]*$")
     )
@@ -79,7 +132,6 @@ object RssParser {
             .replace("&apos;", "'")
             .replace("&amp;", "&")
 
-    /** Убирает CDATA и раскрывает HTML, экранированный целиком (запасной разбор и Atom type="html").[cite: 1] */
     private fun normalizeMarkup(raw: String): String {
         val s = stripCdata(raw)
         return if (escapedHtmlRegex.containsMatchIn(s)) unescapeXml(s) else s
@@ -101,24 +153,19 @@ object RssParser {
         }
     }
 
-    /**
-     * Превращает HTML или обычный текст с сущностями в чистый текст, сохраняя абзацы:
-     * абзацы разделены пустой строкой, внутри абзаца переводы строк одинарные.[cite: 1]
-     */
     private fun markupToText(raw: String): String {
         if (raw.isBlank()) return ""
         var s = normalizeMarkup(raw)
 
         s = if (anyTagRegex.containsMatchIn(s)) {
             s.replace(scriptStyleRegex, "")
-                .replace(whitespaceWithNewline, " ")      // в HTML перевод строки это просто пробел[cite: 1]
+                .replace(whitespaceWithNewline, " ")
                 .replace(brRegex, NL)
                 .replace(blockEndRegex, "$NL$NL")
                 .replace(liEndRegex, NL)
                 .replace(liStartRegex, "• ")
                 .replace(anyTagStripRegex, "")
         } else {
-            // обычный текст (например, rbc_news:full-text): переводы строк значимы[cite: 1]
             s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", NL)
         }
 
@@ -149,7 +196,6 @@ object RssParser {
 
     private val imgRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-    /** Первая картинка внутри HTML описания или полного текста.[cite: 1] */
     private fun firstImageIn(markups: List<String>): String? {
         for (markup in markups) {
             imgRegex.find(normalizeMarkup(markup))?.groupValues?.get(1)?.let { return it }
@@ -158,15 +204,11 @@ object RssParser {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Запасной разбор регулярными выражениями (если лента не читается как XML)
+    // Запасной разбор регулярными выражениями
     // ---------------------------------------------------------------------------------------------
 
     private val tagRegexCache = ConcurrentHashMap<String, Regex>()
 
-    /**
-     * Содержимое первого непустого тега из списка имён (в порядке приоритета).
-     * Имя указывается с префиксом, например "rbc_news:full-text", поэтому "title" не совпадёт с "rbc_news:title".[cite: 1]
-     */
     private fun tag(block: String, vararg names: String): String? {
         for (name in names) {
             val regex = tagRegexCache.getOrPut(name) {
@@ -185,7 +227,6 @@ object RssParser {
 
     private fun pickLink(block: String): String? {
         tag(block, "link")?.let { return it }
-        // Atom: <link href="..." rel="alternate"/>[cite: 1]
         val links = linkTagRegex.findAll(block).map { it.value }.toList()
         val preferred = links.firstOrNull {
             val rel = relRegex.find(it)?.groupValues?.get(1)
@@ -269,10 +310,6 @@ object RssParser {
     // Разбор ленты
     // ---------------------------------------------------------------------------------------------
 
-    /**
-     * @param maxItemsToParse сколько статей разобрать[cite: 1]
-     * @param skipItems сколько первых блоков item/entry пропустить (для догрузки остатка ленты)[cite: 1]
-     */
     fun parseRss(
         xmlContent: String,
         sourceNameDefault: String = "RSS Feed",
@@ -293,9 +330,9 @@ object RssParser {
         val rawFeedTitle = raw.title.orEmpty().replace(tagStripRegex, "").trim()
         var feedTitle = cleanHtmlEntities(rawFeedTitle).ifBlank { sourceNameDefault }
 
-        if (feedTitle.contains("Официальный сайт Череповца", ignoreCase = true) || 
-            feedTitle.contains("Череповец", ignoreCase = true) || 
-            feedTitle.contains("Череповца", ignoreCase = true) || 
+        if (feedTitle.contains("Официальный сайт Череповца", ignoreCase = true) ||
+            feedTitle.contains("Череповец", ignoreCase = true) ||
+            feedTitle.contains("Череповца", ignoreCase = true) ||
             feedTitle.contains("cherinfo", ignoreCase = true)
         ) {
             feedTitle = "Новости Череповца"
@@ -351,9 +388,13 @@ object RssParser {
 
         val imageUrl = item.imageUrl ?: firstImageIn(listOfNotNull(rawFull, item.summary))
 
-        val id = item.link?.takeIf { it.isNotBlank() }
+        // ── Стабилизация id ──────────────────────────────────────────
+        val rawId = item.link?.takeIf { it.isNotBlank() }
             ?: item.guid?.takeIf { it.isNotBlank() }
             ?: "${feedTitle.hashCode()}_${cleanTitle.hashCode()}_${item.pubDate.orEmpty().hashCode()}"
+
+        val id = normalizeArticleId(rawId)
+        // ─────────────────────────────────────────────────────────────
 
         return Article(
             id = id,
@@ -378,7 +419,6 @@ object RssParser {
     // Даты
     // ---------------------------------------------------------------------------------------------
 
-    /** Форматтеры создаются один раз на поток: SimpleDateFormat не потокобезопасен и дорог в создании.[cite: 1] */
     private val dateFormatters = ThreadLocal.withInitial {
         listOf(
             "EEE, dd MMM yyyy HH:mm:ss Z",
@@ -390,7 +430,6 @@ object RssParser {
             "yyyy-MM-dd'T'HH:mm:ssXXX",
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
             "yyyy-MM-dd'T'HH:mm:ssZ",
-            // форматы без часового пояса идут последними: они разбирают и строки с поясом, отбрасывая его[cite: 1]
             "yyyy-MM-dd'T'HH:mm:ss",
             "yyyy-MM-dd HH:mm:ss",
             "dd MMM yyyy HH:mm:ss Z",

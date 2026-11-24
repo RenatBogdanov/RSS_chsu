@@ -24,10 +24,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.rss_chsu.ui.components.ScrollToTopFab
 import com.example.rss_chsu.ui.components.TopAppLogoBar
+import com.example.rss_chsu.ui.model.OnboardingManager
 import com.example.rss_chsu.ui.model.RssRepository
 import com.example.rss_chsu.ui.theme.*
 import kotlinx.coroutines.launch
@@ -38,6 +40,8 @@ fun SettingsScreen() {
     var showDeleteAppDialog by remember { mutableStateOf(false) }
     val currentTheme by ThemeManager.appTheme.collectAsState()
     val isLargeCards by ThemeManager.isLargeCards.collectAsState()
+    val isPinterestMode by ThemeManager.isPinterestMode.collectAsState()
+    val appFont by ThemeManager.appFont.collectAsState()
 
     LaunchedEffect(context) {
         RssRepository.init(context)
@@ -50,11 +54,8 @@ fun SettingsScreen() {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        TopAppLogoBar(
-            title = "НАСТРОЙКИ"
-        )
+        TopAppLogoBar(title = "НАСТРОЙКИ")
 
-        // ── Кнопка «Наверх» ────────────────────────────────────────────
         val scrollState = rememberScrollState()
         val coroutineScope = rememberCoroutineScope()
         val showScrollToTop = remember {
@@ -113,6 +114,49 @@ fun SettingsScreen() {
                     }
                 }
 
+                // ── Шрифт ─────────────────────────────────────────────
+                Text(
+                    text = "Шрифт",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FontOptionItem(
+                        font = AppFont.SANS,
+                        label = "Без засечек",
+                        isSelected = appFont == AppFont.SANS,
+                        modifier = Modifier.weight(1f),
+                        onClick = { ThemeManager.setAppFont(context, AppFont.SANS) }
+                    )
+                    FontOptionItem(
+                        font = AppFont.SERIF,
+                        label = "С засечками",
+                        isSelected = appFont == AppFont.SERIF,
+                        modifier = Modifier.weight(1f),
+                        onClick = { ThemeManager.setAppFont(context, AppFont.SERIF) }
+                    )
+                    FontOptionItem(
+                        font = AppFont.MONO,
+                        label = "Моноширинный",
+                        isSelected = appFont == AppFont.MONO,
+                        modifier = Modifier.weight(1f),
+                        onClick = { ThemeManager.setAppFont(context, AppFont.MONO) }
+                    )
+                }
+
+                Text(
+                    text = "Применяется к заголовкам и тексту статей.",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                // ──────────────────────────────────────────────────────
+
                 Text(
                     text = "Вид карточек в ленте",
                     fontSize = 16.sp,
@@ -162,6 +206,58 @@ fun SettingsScreen() {
                     }
                 }
 
+                // ── Экспериментальные функции ──────────────────────────
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Экспериментальные функции",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = ChipUnselected.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, LightCardBorder.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Pinterest-лента",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Каскадная сетка и удержание карточки для действий",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = isPinterestMode,
+                            onCheckedChange = { ThemeManager.setPinterestMode(context, it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = OnDarkPrimary,
+                                checkedTrackColor = DarkPrimary,
+                                uncheckedThumbColor = TextSecondary,
+                                uncheckedTrackColor = ChipUnselected
+                            )
+                        )
+                    }
+                }
+                // ──────────────────────────────────────────────────────
+
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Row(
@@ -190,11 +286,7 @@ fun SettingsScreen() {
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
                 ) {
-                    Text(
-                        "Подписаться на 50 источников",
-                        color = Color.Red,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text("Подписаться на 50 источников", color = Color.Red, fontWeight = FontWeight.Medium)
                 }
 
                 OutlinedButton(
@@ -203,11 +295,7 @@ fun SettingsScreen() {
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
                 ) {
-                    Text(
-                        "Сбросить все данные",
-                        color = Color.Red,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text("Сбросить все данные", color = Color.Red, fontWeight = FontWeight.Medium)
                 }
 
                 OutlinedButton(
@@ -216,12 +304,26 @@ fun SettingsScreen() {
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
                 ) {
+                    Text("Удалить приложение", color = Color.Red, fontWeight = FontWeight.Medium)
+                }
+
+                // ── Обучение ──────────────────────────────────────────
+                // OnboardingManager.reset обновляет StateFlow, MainActivity
+                // реактивно переключается на OnboardingScreen — без Toast
+                // и перезапуска.
+                OutlinedButton(
+                    onClick = { OnboardingManager.reset(context) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
+                ) {
                     Text(
-                        "Удалить приложение",
-                        color = Color.Red,
+                        "Пройти обучение заново",
+                        color = TextPrimary,
                         fontWeight = FontWeight.Medium
                     )
                 }
+                // ──────────────────────────────────────────────────────
             }
 
             ScrollToTopFab(
@@ -229,7 +331,6 @@ fun SettingsScreen() {
                 onClick = { coroutineScope.launch { scrollState.animateScrollTo(0) } }
             )
         }
-        // ───────────────────────────────────────────────────────────────
 
         if (showDeleteAppDialog) {
             AlertDialog(
@@ -262,6 +363,62 @@ fun SettingsScreen() {
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun FontOptionItem(
+    font: AppFont,
+    label: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val borderColor = if (isSelected) DarkPrimary else LightCardBorder
+    val bgColor = if (isSelected) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        ChipUnselected.copy(alpha = 0.4f)
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Аа",
+            fontSize = 26.sp,
+            fontFamily = font.toFontFamily(),
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "Бб",
+            fontSize = 14.sp,
+            fontFamily = font.toFontFamily(),
+            color = TextSecondary,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) TextPrimary else TextSecondary,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 
