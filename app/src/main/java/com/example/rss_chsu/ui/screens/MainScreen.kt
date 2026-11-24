@@ -1,6 +1,5 @@
 package com.example.rss_chsu.ui.screens
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,8 +19,10 @@ fun MainScreen(
     var selectedArticleId by remember { mutableStateOf<String?>(null) }
 
     val articles by feedViewModel.articles.collectAsState()
-    val articleStatuses by feedViewModel.articleStatuses.collectAsState() // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+    val articleStatuses by feedViewModel.articleStatuses.collectAsState()
 
+    val recommendedArticles by feedViewModel.recommendedArticles.collectAsState()
+    val recommendedFor by feedViewModel.recommendedFor.collectAsState()
 
     LaunchedEffect(articles, selectedArticleId) {
         val id = selectedArticleId ?: return@LaunchedEffect
@@ -67,8 +68,8 @@ fun MainScreen(
             }
 
             if (selectedArticleId != null) {
-                BackHandler { selectedArticleId = null }
-
+                // ❗ BackHandler удалён отсюда — он теперь внутри ArticleReaderScreen,
+                //    чтобы уметь возвращать на предыдущую статью по стеку.
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -76,7 +77,12 @@ fun MainScreen(
                     ArticleReaderScreen(
                         articles = articles,
                         initialArticleId = selectedArticleId,
-                        articleStatuses = articleStatuses, // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+                        articleStatuses = articleStatuses,
+                        recommendedArticles = recommendedArticles,
+                        recommendedFor = recommendedFor,
+                        onLoadRecommendations = { article ->
+                            feedViewModel.loadRecommendations(article)
+                        },
                         onClose = { selectedArticleId = null },
                         onArticleChanged = { newId -> selectedArticleId = newId },
                         onBookmarkClick = { id -> feedViewModel.toggleBookmark(id) },

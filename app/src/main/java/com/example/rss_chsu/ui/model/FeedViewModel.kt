@@ -59,8 +59,14 @@ class FeedViewModel : ViewModel() {
             RecommendationEngine(emptyList())
         )
 
+    // ── «Похожие статьи» для экрана читалки ─────────────────────────────
     private val _recommendedArticles = MutableStateFlow<List<Article>>(emptyList())
     val recommendedArticles: StateFlow<List<Article>> = _recommendedArticles.asStateFlow()
+
+    /** id статьи, для которой сейчас посчитаны рекомендации в _recommendedArticles. */
+    private val _recommendedFor = MutableStateFlow<String?>(null)
+    val recommendedFor: StateFlow<String?> = _recommendedFor.asStateFlow()
+    // ────────────────────────────────────────────────────────────────────
 
     /**
      * top-100 пересчитывается только при изменении recommendationEngine (корпуса),
@@ -103,14 +109,31 @@ class FeedViewModel : ViewModel() {
     fun pagedBookmarks(): Flow<PagingData<Article>> =
         ArticlePagingRepository.pagedBookmarks().cachedIn(viewModelScope)
 
-    /** Вычисляет похожие статьи при открытии конкретной публикации. */
+    /**
+     * Вычисляет похожие статьи при открытии конкретной публикации.
+     *
+     * Защита от гонки: если пользователь успел свайпнуть на другую статью до того,
+     * как отработал расчёт, результат для предыдущей статьи не публикуем.
+     * `_recommendedFor` — это «ключ», по которому UI понимает, для какой статьи
+     * сейчас валиден список рекомендаций.
+     */
     fun loadRecommendations(targetArticle: Article) {
         viewModelScope.launch {
+            _recommendedFor.value = targetArticle.id
+            _recommendedArticles.value = emptyList()
+
             val candidates = articles.value
             val recommendations = withContext(Dispatchers.Default) {
-                recommendationEngine.value.getRecommendations(targetArticle, candidates, limit = 5)
+                recommendationEngine.value.getRecommendations(
+                    targetArticle = targetArticle,
+                    candidates = candidates,
+                    limit = 5
+                )
             }
-            _recommendedArticles.value = recommendations
+            // Публикуем, только если пользователь всё ещё смотрит ту же статью.
+            if (_recommendedFor.value == targetArticle.id) {
+                _recommendedArticles.value = recommendations
+            }
         }
     }
 

@@ -11,12 +11,13 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -70,6 +71,7 @@ import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.example.rss_chsu.data.local.ArticleStatus
 import com.example.rss_chsu.ui.components.RssIcons
 import com.example.rss_chsu.ui.model.Article
 import com.example.rss_chsu.ui.model.RssRepository
@@ -78,25 +80,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
-import com.example.rss_chsu.data.local.ArticleStatus
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ArticleReaderScreen(
     articles: List<Article>,
     initialArticleId: String?,
-    articleStatuses: Map<String, ArticleStatus> = emptyMap(), // <-- ДОБАВИТЬ
+    articleStatuses: Map<String, ArticleStatus> = emptyMap(),
+    recommendedArticles: List<Article> = emptyList(),
+    recommendedFor: String? = null,
+    onLoadRecommendations: (Article) -> Unit = {},
     onClose: () -> Unit,
     onArticleChanged: (String) -> Unit = {},
     onBookmarkClick: (String) -> Unit = {},
     onReadArticle: (String) -> Unit = {}
 ) {
-
     if (articles.isEmpty()) {
         LaunchedEffect(Unit) { onClose() }
         return
     }
+
+    // ── Стек навигации по рекомендациям ────────────────────────────────
+    // Хранит статьи, с которых пользователь «спрыгнул» по рекомендации.
+    // При нажатии «Назад» возвращаемся к последней из них.
+    val navigationStack = remember { mutableStateListOf<String>() }
+
+    // Флаг: true, если смена страницы вызвана программно (клик по рекомендации).
+    // Позволяет отличать «ручной свайп» (стек надо очистить) от «переход по ссылке».
+    var isProgrammaticNavigation by remember { mutableStateOf(false) }
+    // ───────────────────────────────────────────────────────────────────
 
     // Состояние для свайпа вниз
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
@@ -123,10 +137,41 @@ fun ArticleReaderScreen(
     val currentArticle = articles.getOrNull(pagerState.currentPage) ?: articles.first()
     val isCurrentBookmarked = articleStatuses[currentArticle.id]?.isBookmarked ?: currentArticle.isBookmarked
 
+    // Обработчик «Назад» — общий для системной кнопки и для кнопки в шапке.
+    val handleBack: () -> Unit = {
+        if (navigationStack.isNotEmpty()) {
+            val prevId = navigationStack.removeAt(navigationStack.lastIndex)
+            val prevIndex = articles.indexOfFirst { it.id == prevId }
+            if (prevIndex >= 0) {
+                onArticleChanged(prevId)
+                isProgrammaticNavigation = true
+                // Возврат по стеку всегда программный — стек не должен очищаться
+                // от смены currentPage.
+                kotlinx.coroutines.MainScope().launch {
+                    // Возврат «по истории» делаем мгновенным, без анимации:
+                    // пользователь ожидает резкого перехода к тому месту, откуда пришёл.
+                    pagerState.scrollToPage(prevIndex)
+                    isProgrammaticNavigation = false
+                }
+            } else {
+                // Статью успели удалить из кэша — просто закрываем читалку.
+                onClose()
+            }
+        } else {
+            onClose()
+        }
+    }
 
-    // Сообщаем наверх о смене статьи
+    // Системная кнопка «Назад» — только пока читалка в композиции.
+    BackHandler(enabled = true) { handleBack() }
+
+    // Сообщаем наверх о смене статьи + различаем ручной свайп и программный переход
     LaunchedEffect(pagerState.currentPage) {
         val id = articles.getOrNull(pagerState.currentPage)?.id ?: return@LaunchedEffect
+        if (!isProgrammaticNavigation) {
+            // Пользователь свайпнул вручную — история рекомендаций больше не актуальна.
+            navigationStack.clear()
+        }
         onArticleChanged(id)
     }
 
@@ -143,6 +188,11 @@ fun ArticleReaderScreen(
         onReadArticle(currentArticle.id)
     }
 
+    // Считаем «похожие» при открытии/смене статьи
+    LaunchedEffect(currentArticle.id) {
+        onLoadRecommendations(currentArticle)
+    }
+
     var showDetails by remember(currentArticle.id) { mutableStateOf(false) }
 
     val canGoPrevious = pagerState.currentPage > 0
@@ -151,7 +201,28 @@ fun ArticleReaderScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Модификатор для обработки свайпа вниз
+    // Показываем рекомендации только когда они посчитаны именно для текущей статьи
+    val recommendationsForCurrent =
+        if (recommendedFor == currentArticle.id) recommendedArticles else emptyList()
+
+    // Клик по рекомендации: запоминаем, откуда ушли, и переключаем пейджер.
+    val jumpToArticle: (String) -> Unit = { targetId ->
+        val targetIndex = articles.indexOfFirst { it.id == targetId }
+        if (targetIndex >= 0 && targetIndex != pagerState.currentPage) {
+            navigationStack.add(currentArticle.id)
+            isProgrammaticNavigation = true
+            coroutineScope.launch {
+                if (abs(targetIndex - pagerState.currentPage) > 2) {
+                    // Далеко — без анимации, чтобы не мельтешить через 5 промежуточных статей.
+                    pagerState.scrollToPage(targetIndex)
+                } else {
+                    pagerState.animateScrollToPage(targetIndex)
+                }
+                isProgrammaticNavigation = false
+            }
+        }
+    }
+
     val swipeDownModifier = Modifier.pointerInput(Unit) {
         detectVerticalDragGestures(
             onDragEnd = {
@@ -161,14 +232,12 @@ fun ArticleReaderScreen(
                     dragOffsetY = 0f
                 }
             },
-            onDragCancel = {
-                dragOffsetY = 0f
-            },
+            onDragCancel = { dragOffsetY = 0f },
             onVerticalDrag = { change, dragAmount ->
                 change.consume()
-                if (dragAmount > 0) { // Тянем только вниз
+                if (dragAmount > 0) {
                     dragOffsetY += dragAmount
-                } else if (dragOffsetY > 0) { // Позволяем вернуть обратно, но не выше нуля
+                } else if (dragOffsetY > 0) {
                     dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
                 }
             }
@@ -180,7 +249,6 @@ fun ArticleReaderScreen(
             .fillMaxSize()
             .offset { IntOffset(0, animatedDragOffset.roundToInt()) }
             .graphicsLayer {
-                // Эффект "сжатия" и прозрачности при свайпе (как на iOS)
                 val progress = (animatedDragOffset / dismissThresholdPx).coerceIn(0f, 1f)
                 scaleX = 1f - (progress * 0.05f)
                 scaleY = 1f - (progress * 0.05f)
@@ -188,12 +256,12 @@ fun ArticleReaderScreen(
             }
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // 1. Визуальный маркер для свайпа (серая полоска)
+        // Визуальный маркер для свайпа
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp, bottom = 4.dp)
-                .then(swipeDownModifier), // Привязываем жест к полоске
+                .then(swipeDownModifier),
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -209,7 +277,7 @@ fun ArticleReaderScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(swipeDownModifier) // Привязываем жест к шапке
+                .then(swipeDownModifier)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -217,7 +285,7 @@ fun ArticleReaderScreen(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = onClose)
+                    .clickable(onClick = handleBack)   // ← теперь через стек
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -249,7 +317,7 @@ fun ArticleReaderScreen(
             }
         }
 
-        // ── Горизонтальный пейджер по всем статьям ────────────────────────
+        // Горизонтальный пейджер по всем статьям
         HorizontalPager(
             state = pagerState,
             beyondViewportPageCount = 1,
@@ -257,14 +325,16 @@ fun ArticleReaderScreen(
             modifier = Modifier.weight(1f)
         ) { page ->
             val article = articles[page]
+            val isCurrent = article.id == currentArticle.id
             ArticlePage(
                 article = article,
-                showDetails = if (article.id == currentArticle.id) showDetails else false
+                showDetails = isCurrent && showDetails,
+                recommendations = if (isCurrent) recommendationsForCurrent else emptyList(),
+                onRecommendationClick = jumpToArticle
             )
         }
 
         val borderColor = LightCardBorder
-        // Нижняя панель действий читалки
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -311,13 +381,10 @@ fun ArticleReaderScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Стрелка «назад»
                     IconButton(
                         onClick = {
-                            if (canGoPrevious) {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                                }
+                            if (canGoPrevious) coroutineScope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
                             }
                         },
                         enabled = canGoPrevious,
@@ -331,7 +398,6 @@ fun ArticleReaderScreen(
                         )
                     }
 
-                    // Поделиться
                     IconButton(
                         onClick = {
                             val shareText = buildString {
@@ -350,8 +416,7 @@ fun ArticleReaderScreen(
                                 context.startActivity(
                                     Intent.createChooser(shareIntent, "Поделиться статьёй")
                                 )
-                            } catch (_: Exception) {
-                            }
+                            } catch (_: Exception) {}
                         },
                         modifier = Modifier.size(38.dp)
                     ) {
@@ -363,13 +428,10 @@ fun ArticleReaderScreen(
                         )
                     }
 
-                    // Стрелка «вперёд»
                     IconButton(
                         onClick = {
-                            if (canGoNext) {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                }
+                            if (canGoNext) coroutineScope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
                             }
                         },
                         enabled = canGoNext,
@@ -389,140 +451,25 @@ fun ArticleReaderScreen(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Остальные компоненты (ArticlePage, ArticleSkeleton, ShimmerBlock,
-// ArticleContent, FullScreenImageViewer, DownloadIcon, saveImageToGallery)
-// остаются БЕЗ ИЗМЕНЕНИЙ. Скопируйте их из вашего текущего файла.
-// ──────────────────────────────────────────────────────────────────────────
-
-// ──────────────────────────────────────────────────────────────────────────
-// Одна «страница» пейджера: сначала скелетон, потом плавный кроссфейд в контент
+// Одна «страница» пейджера
 // ──────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ArticlePage(
     article: Article,
-    showDetails: Boolean
+    showDetails: Boolean,
+    recommendations: List<Article> = emptyList(),
+    onRecommendationClick: (String) -> Unit = {}
 ) {
     val articleFlow = remember(article.id) { RssRepository.observeArticle(article.id) }
     val fullArticle by articleFlow.collectAsState(initial = article)
 
-    ArticleContent(article = fullArticle ?: article, showDetails = showDetails)
-}
-
-
-/** Скелетон: показывает заголовок/метаданные сразу, а тело — плейсхолдерами. */
-@Composable
-private fun ArticleSkeleton(
-    article: Article,
-    showDetails: Boolean
-) {
-    val context = LocalContext.current
-    val articleUrl = remember(article.id) {
-        if (article.id.startsWith("http://") || article.id.startsWith("https://")) article.id else null
-    }
-    val browserIntent = remember(articleUrl) {
-        articleUrl?.let {
-            try { Intent(Intent.ACTION_VIEW, it.toUri()) } catch (_: Exception) { null }
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 6.dp)
-    ) {
-        val dateLabel = article.pubDateFormatted.ifBlank { article.date }
-        val metaParts = listOfNotNull(
-            article.sourceName.takeIf { it.isNotBlank() },
-            dateLabel.takeIf { it.isNotBlank() },
-            article.readTime.takeIf { it.isNotBlank() }
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Surface(shape = RoundedCornerShape(6.dp), color = ChipUnselected) {
-                Text(
-                    text = article.category.uppercase(),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextSecondary,
-                    letterSpacing = 0.5.sp,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                )
-            }
-            Text(
-                text = metaParts.joinToString(" · "),
-                fontSize = 12.sp,
-                color = TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = article.title,
-            fontSize = 22.sp,
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            lineHeight = 28.sp
-        )
-
-        // Блок «Сведения о статье» — тот же, что и в ArticleContent
-        if (showDetails) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text("Источник: ${article.sourceName}", fontSize = 12.sp, color = TextPrimary)
-                    Text(
-                        "Автор: ${article.author.ifBlank { "Редакция" }}",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                    if (browserIntent != null) {
-                        Text(
-                            text = "Открыть оригинал на сайте",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = DarkPrimary,
-                            modifier = Modifier
-                                .clickable {
-                                    try { context.startActivity(browserIntent) } catch (_: Exception) {}
-                                }
-                                .padding(top = 2.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        ShimmerBlock(widthFraction = 1f, height = 18.dp)
-        Spacer(Modifier.height(10.dp))
-        ShimmerBlock(widthFraction = 0.95f, height = 18.dp)
-        Spacer(Modifier.height(10.dp))
-        ShimmerBlock(widthFraction = 0.85f, height = 18.dp)
-        Spacer(Modifier.height(18.dp))
-        ShimmerBlock(widthFraction = 1f, height = 18.dp)
-        Spacer(Modifier.height(10.dp))
-        ShimmerBlock(widthFraction = 0.7f, height = 18.dp)
-        Spacer(Modifier.height(40.dp))
-    }
+    ArticleContent(
+        article = fullArticle ?: article,
+        showDetails = showDetails,
+        recommendations = recommendations,
+        onRecommendationClick = onRecommendationClick
+    )
 }
 
 @Composable
@@ -553,13 +500,15 @@ private fun ShimmerBlock(widthFraction: Float, height: Dp) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Тело статьи
+// Тело статьи + блок «Похожие статьи» в конце
 // ──────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ArticleContent(
     article: Article,
-    showDetails: Boolean
+    showDetails: Boolean,
+    recommendations: List<Article> = emptyList(),
+    onRecommendationClick: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showFullScreenImage by remember(article.id) { mutableStateOf(false) }
@@ -741,7 +690,122 @@ private fun ArticleContent(
                 )
             }
         }
+
+        // Блок «Похожие статьи»
+        if (recommendations.isNotEmpty()) {
+            SimilarArticlesBlock(
+                recommendations = recommendations,
+                onArticleClick = onRecommendationClick
+            )
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Блок «Похожие статьи»
+// ──────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SimilarArticlesBlock(
+    recommendations: List<Article>,
+    onArticleClick: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = LightCardBorder.copy(alpha = 0.6f)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Похожие статьи",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        recommendations.forEach { rec ->
+            SimilarArticleRow(
+                article = rec,
+                onClick = { onArticleClick(rec.id) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun SimilarArticleRow(
+    article: Article,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, LightCardBorder.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = ChipUnselected
+                ) {
+                    Text(
+                        text = article.category.uppercase(),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 0.4.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+                Text(
+                    text = article.sourceName,
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (article.readTime.isNotBlank()) {
+                    Text(
+                        text = article.readTime,
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        maxLines = 1
+                    )
+                }
+            }
+            Text(
+                text = article.title,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                lineHeight = 19.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
